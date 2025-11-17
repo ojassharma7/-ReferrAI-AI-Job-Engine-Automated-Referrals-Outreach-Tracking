@@ -1,0 +1,28 @@
+{
+  "name": "referrai",
+  "version": "0.1.0",
+  "description": "AI-powered job referral and automated application engine",
+  "type": "module",
+  "main": "src/generateApplicationForJob.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/generateApplicationForJob.ts",
+    "dev": "tsx watch src/generateApplicationForJob.ts"
+  },
+  "keywords": [
+    "job-search",
+    "automation",
+    "referrals",
+    "resume",
+    "cover-letter"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {}
+}
+
