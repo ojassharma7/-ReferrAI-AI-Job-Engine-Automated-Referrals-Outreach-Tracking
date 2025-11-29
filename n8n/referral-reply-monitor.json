@@ -1,0 +1,374 @@
+{
+  "name": "ReferrAI - Gmail Reply Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "notes": "Runs every 15 minutes to check for email replies"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 50,
+        "simple": false,
+        "options": {
+          "q": "newer_than:1d is:unread"
+        }
+      },
+      "id": "gmail-fetch-messages",
+      "name": "Gmail: Fetch Recent Messages",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [450, 300],
+      "credentials": {
+        "gmailOAuth2Api": {
+          "id": "gmail-referrai",
+          "name": "Gmail (ReferrAI)"
+        }
+      },
+      "notes": "Fetches messages from the last 24 hours"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Map Gmail messages to reply tracking format\nconst messages = items.map(item => {\n  const msg = item.json;\n  return {\n    thread_id: msg.threadId || '',\n    from: msg.from?.emailAddress?.address || msg.from || '',\n    subject: msg.subject || '',\n    snippet: msg.snippet || msg.body || '',\n    message_id: msg.id || '',\n    received_at: msg.receivedDateTime || msg.date || new Date().toISOString()\n  };\n});\n\nreturn messages.map(msg => ({ json: msg }));"
+      },
+      "id": "function-map-replies",
+      "name": "Function: Map Replies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Maps Gmail message format to our tracking format"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "emails",
+          "mode": "list"
+        },
+        "options": {
+          "range": "A:Z"
+        }
+      },
+      "id": "sheets-read-emails",
+      "name": "Read Emails Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [850, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-referrai",
+          "name": "Google Sheets (ReferrAI)"
+        }
+      },
+      "notes": "Reads all rows from emails sheet to find matching thread_ids"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lookup email by thread_id\n// In n8n, we need to store emails in workflow context or use a different approach\n// For now, we'll use a Set node pattern - store emails, then lookup per reply\n// This function processes each reply and looks up in stored emails\nconst reply = items[0].json;\n\n// Get all input items - emails should be in the input stream\nconst allItems = $input.all();\n\n// Filter to get emails (have email_id field) vs replies (have thread_id but no email_id)\nconst emails = allItems\n  .filter(item => item.json.email_id)\n  .map(item => item.json);\n\n// Find matching email by thread_id\nconst matchingEmail = emails.find(email => {\n  const emailThreadId = email.thread_id ? email.thread_id.toString() : '';\n  const replyThreadId = reply.thread_id ? reply.thread_id.toString() : '';\n  return emailThreadId === replyThreadId && emailThreadId !== '';\n});\n\nif (!matchingEmail) {\n  return [{ json: { ...reply, matched: false } }];\n}\n\nreturn [{\n  json: {\n    ...reply,\n    matched: true,\n    email_id: matchingEmail.email_id,\n    contact_id: matchingEmail.contact_id,\n    job_id: matchingEmail.job_id,\n    original_subject: matchingEmail.subject_used || matchingEmail.subject_a || matchingEmail.subject_b\n  }\n}];"
+      },
+      "id": "function-lookup-email",
+      "name": "Function: Lookup by thread_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Finds the matching email row in Sheets by thread_id"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-matched",
+              "leftValue": "={{ $json.matched }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-matched",
+      "name": "If: Email Matched",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [1250, 300],
+      "notes": "Only process if we found a matching email in Sheets"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if reply is positive\nconst reply = items[0].json;\nconst snippet = (reply.snippet || '').toLowerCase();\n\nconst positiveKeywords = [\n  'let\\'s chat',\n  'happy to connect',\n  'sounds good',\n  'interested',\n  'would love to',\n  'definitely',\n  'absolutely',\n  'yes',\n  'sure',\n  'reach out',\n  'connect',\n  'schedule',\n  'call',\n  'meeting'\n];\n\nconst isPositive = positiveKeywords.some(keyword => snippet.includes(keyword));\n\nreturn [{\n  json: {\n    ...reply,\n    event_type: isPositive ? 'positive' : 'reply'\n  }\n}];"
+      },
+      "id": "function-positivity-check",
+      "name": "Function: Positivity Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300],
+      "notes": "Simple keyword-based check to determine if reply is positive"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "emails",
+          "mode": "list"
+        },
+        "columnToMatchOn": "thread_id",
+        "valueToMatchOn": "={{ $json.thread_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "reply"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sheets-update-email",
+      "name": "Update Email Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1650, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-referrai",
+          "name": "Google Sheets (ReferrAI)"
+        }
+      },
+      "notes": "Updates email status to 'reply' in emails sheet"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "contacts",
+          "mode": "list"
+        },
+        "columnToMatchOn": "contact_id",
+        "valueToMatchOn": "={{ $json.contact_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "replied"
+            },
+            {
+              "fieldId": "followup_stage",
+              "fieldValue": "99"
+            },
+            {
+              "fieldId": "last_contacted_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sheets-update-contact",
+      "name": "Update Contact Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1850, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-referrai",
+          "name": "Google Sheets (ReferrAI)"
+        }
+      },
+      "notes": "Updates contact status to 'replied' and sets followup_stage to 99 (terminal)"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "events",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "event_id": "={{ 'evt-' + $now.toMillis() + '-' + Math.random().toString(36).slice(2, 9) }}",
+            "contact_id": "={{ $json.contact_id }}",
+            "job_id": "={{ $json.job_id }}",
+            "type": "={{ $json.event_type }}",
+            "timestamp": "={{ $now.toISO() }}",
+            "payload_json": "={{ JSON.stringify({ thread_id: $json.thread_id, from: $json.from, subject: $json.subject }) }}",
+            "notes": "={{ $json.snippet.substring(0, 200) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-append-event",
+      "name": "Append Event to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [2050, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-referrai",
+          "name": "Google Sheets (ReferrAI)"
+        }
+      },
+      "notes": "Logs the reply event to events sheet"
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Fetch Recent Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Fetch Recent Messages": {
+      "main": [
+        [
+          {
+            "node": "Function: Map Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: Map Replies": {
+      "main": [
+        [
+          {
+            "node": "Read Emails Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Emails Sheet": {
+      "main": [
+        [
+          {
+            "node": "Function: Lookup by thread_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: Lookup by thread_id": {
+      "main": [
+        [
+          {
+            "node": "If: Email Matched",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If: Email Matched": {
+      "main": [
+        [
+          {
+            "node": "Function: Positivity Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: Positivity Check": {
+      "main": [
+        [
+          {
+            "node": "Update Email Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Email Status": {
+      "main": [
+        [
+          {
+            "node": "Update Contact Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Contact Status": {
+      "main": [
+        [
+          {
+            "node": "Append Event to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-18T00:00:00.000Z",
+  "versionId": "1"
+}
+

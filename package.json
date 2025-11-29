@@ -7,6 +7,8 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/generateApplicationForJob.ts",
+    "pipeline": "tsx src/jobPipeline.ts",
+    "test:sheets": "tsx src/testSheets.ts",
     "dev": "tsx watch src/generateApplicationForJob.ts"
   },
   "keywords": [
@@ -19,10 +21,12 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.10.0",
-    "tsx": "^4.7.0",
+    "@types/node": "^20.10.0", 
+    "tsx": "^4.7.0", 0 
     "typescript": "^5.3.3"
   },
-  "dependencies": {}
+  "dependencies": {
+    "googleapis": "^128.0.0"
+  }
 }
 

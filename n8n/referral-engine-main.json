@@ -1,0 +1,302 @@
+{
+  "name": "ReferrAI - Main Daily Referral Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "recurrence": {
+            "field": "days",
+            "daysInterval": 1
+          }
+        },
+        "triggerAtHour": 10,
+        "triggerAtMinute": 0
+      },
+      "id": "cron-trigger",
+      "name": "Daily Trigger (10:00 AM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "notes": "Runs once per day at 10:00 AM to process new jobs"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "jobs",
+          "mode": "list"
+        },
+        "options": {
+          "range": "A:Z"
+        }
+      },
+      "id": "sheets-read-jobs",
+      "name": "Read Jobs from Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [450, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-referrai",
+          "name": "Google Sheets (ReferrAI)"
+        }
+      },
+      "notes": "Reads all rows from the 'jobs' sheet"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "filter-status",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "filter-status-in-progress",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "in_progress",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "filter-jobs",
+      "name": "Filter: status = ready or in_progress",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [650, 300],
+      "notes": "Filters jobs to only process 'ready' or 'in_progress' status"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build JobRow from Sheets row\nconst row = items[0].json;\n\nreturn [{\n  json: {\n    job_id: row.job_id || '',\n    company: row.company || '',\n    company_slug: row.company_slug || '',\n    domain: row.domain || '',\n    job_title: row.job_title || '',\n    job_family: row.job_family || '',\n    job_location: row.job_location || '',\n    job_url: row.job_url || '',\n    jd_text: row.jd_text || '',\n    jd_keywords: row.jd_keywords || '',\n    status: row.status || 'ready',\n    resume_status: row.resume_status || 'pending',\n    cover_letter_status: row.cover_letter_status || 'pending',\n    notes: row.notes || '',\n    last_synced_at: row.last_synced_at || new Date().toISOString()\n  }\n}];"
+      },
+      "id": "function-build-jobrow",
+      "name": "Function: Build JobRow",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "notes": "Maps Sheets row to JobRow structure"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract JD Insights (simplified version of extractJdInsights)\nconst job = items[0].json;\nconst jdText = job.jd_text || '';\n\n// Simple keyword extraction\nfunction getKeywords(text) {\n  if (!text) return [];\n  const words = text\n    .toLowerCase()\n    .replace(/[^a-z0-9+\\s]/g, ' ')\n    .split(/\\s+/)\n    .filter(w => w.length > 3 && w.length < 25);\n  const freq = {};\n  words.forEach(w => { freq[w] = (freq[w] || 0) + 1; });\n  return Object.entries(freq)\n    .sort((a, b) => b[1] - a[1])\n    .slice(0, 10)\n    .map(([word]) => word);\n}\n\nfunction extractPhrases(text, pattern) {\n  const matches = [];\n  const regex = new RegExp(pattern, 'gi');\n  let m;\n  while ((m = regex.exec(text)) !== null) {\n    matches.push(m[1].trim());\n  }\n  return matches;\n}\n\nconst keywordList = getKeywords(jdText);\nconst requirements = extractPhrases(jdText, /(?:responsibilities|requirements|must have|you will|you should):?\\s*([\\s\\S]*?)(?:\\n\\n|$)/);\nconst niceToHave = extractPhrases(jdText, /(?:nice to have|preferred|bonus):?\\s*([\\s\\S]*?)(?:\\n\\n|$)/);\n\nreturn [{\n  json: {\n    ...job,\n    jd_insights: {\n      jd_keywords: keywordList.slice(0, 10),\n      top_requirements: requirements.length ? requirements[0].split(/\\n|•|-/).map(s => s.trim()).filter(Boolean).slice(0, 5) : [],\n      nice_to_have: niceToHave.length ? niceToHave[0].split(/\\n|•|-/).map(s => s.trim()).filter(Boolean).slice(0, 5) : []\n    }\n  }\n}];"
+      },
+      "id": "function-extract-jd-insights",
+      "name": "Function: Extract JD Insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Extracts keywords, requirements, and nice-to-haves from JD text"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build filesystem paths\nconst job = items[0].json;\nconst path = require('path');\nconst cwd = process.cwd();\n\nreturn [{\n  json: {\n    ...job,\n    jobFolder: path.join(cwd, 'outputs', job.company_slug, job.job_id),\n    resumePath: path.join(cwd, 'outputs', job.company_slug, job.job_id, 'resume.tex'),\n    coverLetterPath: path.join(cwd, 'outputs', job.company_slug, job.job_id, 'cover_letter.tex')\n  }\n}];"
+      },
+      "id": "function-paths",
+      "name": "Function: Build Paths",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "notes": "Generates output folder and file paths for resume/cover letter"
+    },
+    {
+      "parameters": {
+        "command": "cd /Users/ojassharma/Desktop/PERSONAL_\\ PROJECTS_GITHUB/-ReferrAI-AI-Job-Engine-Automated-Referrals-Outreach-Tracking && npm run pipeline {{ $json.job_id }}",
+        "options": {}
+      },
+      "id": "execute-pipeline",
+      "name": "Execute: Run Pipeline",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.1,
+      "position": [1450, 300],
+      "notes": "Runs the full Node.js pipeline for this job (resume, cover letter, contacts, emails)"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-in-batches",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 500],
+      "notes": "Processes jobs one at a time"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "jobs",
+          "mode": "list"
+        },
+        "columnToMatchOn": "job_id",
+        "valueToMatchOn": "={{ $json.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldId": "last_synced_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sheets-update-status",
+      "name": "Update Job Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1650, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-referrai",
+          "name": "Google Sheets (ReferrAI)"
+        }
+      },
+      "notes": "Updates job status to 'completed' after pipeline runs"
+    }
+  ],
+  "connections": {
+    "Daily Trigger (10:00 AM)": {
+      "main": [
+        [
+          {
+            "node": "Read Jobs from Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Jobs from Sheets": {
+      "main": [
+        [
+          {
+            "node": "Filter: status = ready or in_progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter: status = ready or in_progress": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Function: Build JobRow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: Build JobRow": {
+      "main": [
+        [
+          {
+            "node": "Function: Extract JD Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: Extract JD Insights": {
+      "main": [
+        [
+          {
+            "node": "Function: Build Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: Build Paths": {
+      "main": [
+        [
+          {
+            "node": "Execute: Run Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute: Run Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Update Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Job Status": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-18T00:00:00.000Z",
+  "versionId": "1"
+}
+

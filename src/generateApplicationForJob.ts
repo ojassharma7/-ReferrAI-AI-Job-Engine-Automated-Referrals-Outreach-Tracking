@@ -12,12 +12,25 @@ import {
   callGeminiResumeCustomization,
   callGeminiCoverLetter,
 } from './geminiStubs';
+import { loadEnv } from './env';
+import { logInfo, logWarn, logError } from './logger';
+import { getJobRowFromSheets } from './sheetsClient';
+
+// Load environment variables
+loadEnv();
 
 /**
- * Stub: Load job row from data source (to be replaced with Google Sheets API)
+ * Load job row from Google Sheets, with fallback to stub
  */
-function getJobRow(jobId: string): JobRow {
-  // TODO: Replace with real Google Sheets API call
+async function getJobRow(jobId: string): Promise<JobRow> {
+  const fromSheets = await getJobRowFromSheets(jobId);
+  if (fromSheets) {
+    logInfo('Loaded job from Google Sheets:', jobId);
+    return fromSheets;
+  }
+
+  // Fallback stub (current behavior)
+  logWarn('Falling back to stubbed JobRow for jobId:', jobId);
   return {
     job_id: jobId,
     company: 'XYZ Bank',
@@ -65,21 +78,21 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Generating application materials for job: ${jobId}`);
+  logInfo('Generating application materials for job:', jobId);
 
   // Load job data
-  const job = getJobRow(jobId);
-  console.log(`Job: ${job.job_title} at ${job.company}`);
+  const job = await getJobRow(jobId);
+  logInfo('Job:', job.job_title, 'at', job.company);
 
   // Extract JD insights
   const jdInsights = extractJdInsights(job);
-  console.log(`Extracted ${jdInsights.jd_keywords.length} keywords`);
+  logInfo(`Extracted ${jdInsights.jd_keywords.length} keywords`);
 
   // Load base resume template
   const resumeTemplatePath = config.RESUME_TEMPLATE_PATH as string;
   if (!fs.existsSync(resumeTemplatePath)) {
-    console.warn(
-      `Warning: Resume template not found at ${resumeTemplatePath}. Using empty template.`,
+    logWarn(
+      `Resume template not found at ${resumeTemplatePath}. Using empty template.`,
     );
   }
   const baseResume = fs.existsSync(resumeTemplatePath)
@@ -87,8 +100,8 @@ async function main() {
     : '% Base resume template\n\\begin{document}\n\\end{document}';
 
   // Generate customized resume
-  console.log('Calling Gemini for resume customization...');
-  const resumeResponse = callGeminiResumeCustomization(job, jdInsights, baseResume);
+  logInfo('Calling Gemini for resume customization...');
+  const resumeResponse = await callGeminiResumeCustomization(job, jdInsights, baseResume);
   const updatedResume = applyResumeUpdates(baseResume, resumeResponse);
 
   // Generate cover letter
@@ -96,8 +109,8 @@ async function main() {
     'Ojas Sharma — data scientist with credit risk background.';
   const proofPoint =
     'Detected 13% more high-risk gamblers via unsupervised clustering.';
-  console.log('Calling Gemini for cover letter generation...');
-  const coverLetterResponse = callGeminiCoverLetter(
+  logInfo('Calling Gemini for cover letter generation...');
+  const coverLetterResponse = await callGeminiCoverLetter(
     job,
     jdInsights,
     candidateProfile,
@@ -107,7 +120,7 @@ async function main() {
   // Ensure output directory exists
   const folder = getJobFolder(job);
   ensureDir(folder);
-  console.log(`Output directory: ${folder}`);
+  logInfo('Output directory:', folder);
 
   // Write files
   const resumePath = getResumePath(job);
@@ -116,13 +129,13 @@ async function main() {
   fs.writeFileSync(resumePath, updatedResume, 'utf8');
   fs.writeFileSync(coverLetterPath, coverLetterResponse.cover_letter, 'utf8');
 
-  console.log('\n✅ Successfully generated application materials:');
-  console.log(`   Resume: ${resumePath}`);
-  console.log(`   Cover Letter: ${coverLetterPath}`);
+  logInfo('Successfully generated application materials:');
+  logInfo('  Resume:', resumePath);
+  logInfo('  Cover Letter:', coverLetterPath);
 }
 
 main().catch((err) => {
-  console.error('Error generating application materials:', err);
+  logError('Error generating application materials:', err);
   process.exit(1);
 });
 

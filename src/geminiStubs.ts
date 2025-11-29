@@ -1,4 +1,4 @@
-// Stubbed Gemini API calls (to be replaced with real API integration)
+// Gemini API calls with real integration and stubs as fallback
 
 import {
   JobRow,
@@ -7,16 +7,69 @@ import {
   CoverLetterResponse,
   ReferralEmailResult,
 } from './types';
+import { callGemini } from './geminiClient';
+import { logInfo, logWarn } from './logger';
 
 /**
- * Stub: Call Gemini to customize resume based on job description
+ * Call Gemini to customize resume based on job description
+ * Uses real API if USE_GEMINI=true, otherwise returns stub
  */
-export function callGeminiResumeCustomization(
+export async function callGeminiResumeCustomization(
   job: JobRow,
   jdInsights: JDInsights,
   baseResume: string,
-): ResumeCustomizationResponse {
-  // TODO: Replace with real Gemini API call
+): Promise<ResumeCustomizationResponse> {
+  const useRealGemini = process.env.USE_GEMINI === 'true';
+  const model = process.env.GEMINI_MODEL || 'gemini-pro';
+
+  if (useRealGemini) {
+    logInfo('Calling real Gemini API for resume customization...');
+    const systemPrompt = `You are an expert resume editor. Keep the candidate's experience authentic; never fabricate roles, employers, or achievements. Adapt content to the job description, reordering or rephrasing bullets to emphasize the most relevant work. Output either structured updates or a full LaTeX body as instructed.`;
+    const userPrompt = `Base resume content (structured or plain text):
+${baseResume}
+
+Job details:
+- Company: ${job.company}
+- Title: ${job.job_title}
+- Job Family: ${job.job_family}
+
+JD insights:
+- Keywords: ${jdInsights.jd_keywords.join(', ')}
+- Top Requirements: ${jdInsights.top_requirements.join('; ')}
+- Nice to Have: ${jdInsights.nice_to_have.join('; ')}
+
+Instructions:
+- Prefer structured updates: array of objects {sectionId, action (replace|append|reorder), content, rationale}.
+- If structured updates are insufficient, provide a full LaTeX resume body.
+- Keep total length to 1–2 pages consistent with the base template.
+- Preserve true experience; only rephrase, reorder, or emphasize existing points.
+
+Respond with JSON:
+{
+  "sections": [ ... ],
+  "latexBody": "<optional if providing full body>",
+  "notes": "<optional guidance>"
+}`;
+
+    try {
+      const rawResponse = await callGemini(model, systemPrompt, userPrompt);
+      // Try to parse JSON from response
+      let jsonStr = rawResponse.trim();
+      jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      }
+      const parsed = JSON.parse(jsonStr);
+      return parsed as ResumeCustomizationResponse;
+    } catch (error) {
+      logWarn('Failed to parse Gemini response, falling back to stub:', error);
+      // Fall through to stub
+    }
+  }
+
+  // Stub fallback
+  logInfo('Using stubbed resume customization response');
   return {
     sections: [
       {
@@ -33,15 +86,67 @@ export function callGeminiResumeCustomization(
 }
 
 /**
- * Stub: Call Gemini to generate cover letter
+ * Call Gemini to generate cover letter
+ * Uses real API if USE_GEMINI=true, otherwise returns stub
  */
-export function callGeminiCoverLetter(
+export async function callGeminiCoverLetter(
   job: JobRow,
   jdInsights: JDInsights,
   candidateProfile: string,
   proofPoint: string,
-): CoverLetterResponse {
-  // TODO: Replace with real Gemini API call
+): Promise<CoverLetterResponse> {
+  const useRealGemini = process.env.USE_GEMINI === 'true';
+  const model = process.env.GEMINI_MODEL || 'gemini-pro';
+
+  if (useRealGemini) {
+    logInfo('Calling real Gemini API for cover letter generation...');
+    const systemPrompt = `You are drafting tailored cover letters in LaTeX-friendly text. Use the candidate's authentic background, referencing specific JD responsibilities and linking them to concrete achievements. Output 3–5 short paragraphs separated by blank lines.`;
+    const userPrompt = `Candidate profile:
+${candidateProfile}
+
+Job details:
+- Company: ${job.company}
+- Title: ${job.job_title}
+- Location: ${job.job_location}
+- Job Family: ${job.job_family}
+
+JD insights:
+- Keywords: ${jdInsights.jd_keywords.join(', ')}
+- Top Requirements: ${jdInsights.top_requirements.join('; ')}
+- Nice to Have: ${jdInsights.nice_to_have.join('; ')}
+
+Proof point to highlight:
+${proofPoint}
+
+Requirements:
+- Reference 1–2 explicit responsibilities from the JD.
+- Tie those responsibilities to the provided achievements.
+- Keep tone confident, polite, and concise.
+- Produce LaTeX-safe text (escape characters where needed).
+- Output 3–5 paragraphs separated by blank lines.
+
+Return JSON:
+{"cover_letter":"<paragraphs separated by \\n\\n>"}`;
+
+    try {
+      const rawResponse = await callGemini(model, systemPrompt, userPrompt);
+      // Try to parse JSON from response
+      let jsonStr = rawResponse.trim();
+      jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      }
+      const parsed = JSON.parse(jsonStr);
+      return parsed as CoverLetterResponse;
+    } catch (error) {
+      logWarn('Failed to parse Gemini response, falling back to stub:', error);
+      // Fall through to stub
+    }
+  }
+
+  // Stub fallback
+  logInfo('Using stubbed cover letter response');
   return {
     cover_letter: `Dear Hiring Team,
 
@@ -58,12 +163,46 @@ Ojas`,
 }
 
 /**
- * Stub: Call Gemini to generate referral email
+ * Call Gemini to generate referral email
+ * Uses real API if USE_GEMINI=true, otherwise returns stub
  */
 export async function callGeminiReferralEmail(
   prompts: { systemPrompt: string; userPrompt: string },
 ): Promise<ReferralEmailResult> {
-  // TODO: Replace with real Gemini API call
+  const useRealGemini = process.env.USE_GEMINI === 'true';
+  const model = process.env.GEMINI_MODEL || 'gemini-pro';
+
+  if (useRealGemini) {
+    logInfo('Calling real Gemini API for referral email generation...');
+    try {
+      const rawResponse = await callGemini(
+        model,
+        prompts.systemPrompt,
+        prompts.userPrompt,
+      );
+      // Try to parse JSON from response
+      let jsonStr = rawResponse.trim();
+      jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      }
+      const parsed = JSON.parse(jsonStr);
+      
+      // Validate required fields
+      if (!parsed.subject_a || !parsed.subject_b || !parsed.body) {
+        throw new Error('Missing required fields in Gemini response');
+      }
+      
+      return parsed as ReferralEmailResult;
+    } catch (error) {
+      logWarn('Failed to parse Gemini response, falling back to stub:', error);
+      // Fall through to stub
+    }
+  }
+
+  // Stub fallback
+  logInfo('Using stubbed referral email response');
   // For now, extract contact name and job title from userPrompt to make it realistic
   const contactMatch = prompts.userPrompt.match(/Name: ([^\n]+)/);
   const jobTitleMatch = prompts.userPrompt.match(/Title: ([^\n]+)/);
