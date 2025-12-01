@@ -1,5 +1,10 @@
 // Environment variable loading and validation
 
+import dotenv from 'dotenv';
+
+// Load .env file if it exists
+dotenv.config();
+
 /**
  * Load and validate environment variables
  * Throws clear errors if required variables are missing
