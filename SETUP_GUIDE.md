@@ -121,8 +121,10 @@ npm run pipeline test-hunter-001
    - Add your email as test user
    - Save
 4. Back to Credentials, create OAuth client ID:
-   - Application type: "Desktop app"
-   - Name: "ReferrAI Gmail"
+   - **Application type: "Web application"** (NOT Desktop app - this allows custom redirect URIs)
+   - Name: "ReferrAI Gmail Web"
+   - Under "Authorized redirect URIs", click "+ ADD URI"
+   - Add: `https://developers.google.com/oauthplayground`
    - Click "Create"
 5. Copy Client ID and Client Secret
 

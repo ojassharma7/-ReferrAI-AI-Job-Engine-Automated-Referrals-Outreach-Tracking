@@ -20,7 +20,7 @@ export async function callGeminiResumeCustomization(
   baseResume: string,
 ): Promise<ResumeCustomizationResponse> {
   const useRealGemini = process.env.USE_GEMINI === 'true';
-  const model = process.env.GEMINI_MODEL || 'gemini-pro';
+  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-001'; // Stable version
 
   if (useRealGemini) {
     logInfo('Calling real Gemini API for resume customization...');
@@ -53,17 +53,31 @@ Respond with JSON:
 
     try {
       const rawResponse = await callGemini(model, systemPrompt, userPrompt);
+      logInfo(`Raw Gemini response (first 500 chars): ${rawResponse.substring(0, 500)}`);
+      
       // Try to parse JSON from response
       let jsonStr = rawResponse.trim();
+      
+      // Remove markdown code blocks if present
       jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      
+      // Try to extract JSON object
       const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         jsonStr = jsonMatch[0];
       }
+      
+      logInfo(`Extracted JSON string (first 300 chars): ${jsonStr.substring(0, 300)}`);
+      
       const parsed = JSON.parse(jsonStr);
+      logInfo('Successfully parsed Gemini response');
       return parsed as ResumeCustomizationResponse;
     } catch (error) {
-      logWarn('Failed to parse Gemini response, falling back to stub:', error);
+      logWarn('Failed to parse Gemini response, falling back to stub');
+      logWarn(`Error details: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof Error && error.stack) {
+        logWarn(`Stack: ${error.stack.substring(0, 200)}`);
+      }
       // Fall through to stub
     }
   }
@@ -96,7 +110,7 @@ export async function callGeminiCoverLetter(
   proofPoint: string,
 ): Promise<CoverLetterResponse> {
   const useRealGemini = process.env.USE_GEMINI === 'true';
-  const model = process.env.GEMINI_MODEL || 'gemini-pro';
+  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-001'; // Stable version
 
   if (useRealGemini) {
     logInfo('Calling real Gemini API for cover letter generation...');
@@ -130,17 +144,31 @@ Return JSON:
 
     try {
       const rawResponse = await callGemini(model, systemPrompt, userPrompt);
+      logInfo(`Raw Gemini response (first 500 chars): ${rawResponse.substring(0, 500)}`);
+      
       // Try to parse JSON from response
       let jsonStr = rawResponse.trim();
+      
+      // Remove markdown code blocks if present
       jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      
+      // Try to extract JSON object
       const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         jsonStr = jsonMatch[0];
       }
+      
+      logInfo(`Extracted JSON string (first 300 chars): ${jsonStr.substring(0, 300)}`);
+      
       const parsed = JSON.parse(jsonStr);
+      logInfo('Successfully parsed Gemini response');
       return parsed as CoverLetterResponse;
     } catch (error) {
-      logWarn('Failed to parse Gemini response, falling back to stub:', error);
+      logWarn('Failed to parse Gemini response, falling back to stub');
+      logWarn(`Error details: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof Error && error.stack) {
+        logWarn(`Stack: ${error.stack.substring(0, 200)}`);
+      }
       // Fall through to stub
     }
   }
@@ -170,7 +198,7 @@ export async function callGeminiReferralEmail(
   prompts: { systemPrompt: string; userPrompt: string },
 ): Promise<ReferralEmailResult> {
   const useRealGemini = process.env.USE_GEMINI === 'true';
-  const model = process.env.GEMINI_MODEL || 'gemini-pro';
+  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-001'; // Stable version
 
   if (useRealGemini) {
     logInfo('Calling real Gemini API for referral email generation...');
@@ -180,13 +208,22 @@ export async function callGeminiReferralEmail(
         prompts.systemPrompt,
         prompts.userPrompt,
       );
+      logInfo(`Raw Gemini response (first 500 chars): ${rawResponse.substring(0, 500)}`);
+      
       // Try to parse JSON from response
       let jsonStr = rawResponse.trim();
+      
+      // Remove markdown code blocks if present
       jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      
+      // Try to extract JSON object
       const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         jsonStr = jsonMatch[0];
       }
+      
+      logInfo(`Extracted JSON string (first 300 chars): ${jsonStr.substring(0, 300)}`);
+      
       const parsed = JSON.parse(jsonStr);
       
       // Validate required fields
@@ -194,9 +231,14 @@ export async function callGeminiReferralEmail(
         throw new Error('Missing required fields in Gemini response');
       }
       
+      logInfo('Successfully parsed Gemini response');
       return parsed as ReferralEmailResult;
     } catch (error) {
-      logWarn('Failed to parse Gemini response, falling back to stub:', error);
+      logWarn('Failed to parse Gemini response, falling back to stub');
+      logWarn(`Error details: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof Error && error.stack) {
+        logWarn(`Stack: ${error.stack.substring(0, 200)}`);
+      }
       // Fall through to stub
     }
   }

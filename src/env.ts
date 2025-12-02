@@ -23,7 +23,7 @@ export function loadEnv(): void {
   }
 
   if (!process.env.GEMINI_MODEL) {
-    process.env.GEMINI_MODEL = 'gemini-pro';
+    process.env.GEMINI_MODEL = 'gemini-2.0-flash-001'; // Stable version that works with v1 API
   }
 
   // Google Sheets and contact discovery APIs are optional (will fall back to stubs)

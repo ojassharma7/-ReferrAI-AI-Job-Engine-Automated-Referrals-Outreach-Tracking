@@ -10,7 +10,7 @@ let gmailClient: any = null;
 /**
  * Initialize Gmail client with OAuth2 credentials
  */
-async function getGmailClient() {
+export async function getGmailClient() {
   if (gmailClient) {
     return gmailClient;
   }
