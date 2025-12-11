@@ -1,10 +1,5 @@
 // Environment variable loading and validation
 
-import dotenv from 'dotenv';
-
-// Load .env file if it exists
-dotenv.config();
-
 /**
  * Load and validate environment variables
  * Throws clear errors if required variables are missing
@@ -23,7 +18,7 @@ export function loadEnv(): void {
   }
 
   if (!process.env.GEMINI_MODEL) {
-    process.env.GEMINI_MODEL = 'gemini-2.0-flash-001'; // Stable version that works with v1 API
+    process.env.GEMINI_MODEL = 'gemini-pro';
   }
 
   // Google Sheets and contact discovery APIs are optional (will fall back to stubs)

@@ -9,8 +9,6 @@
     "start": "tsx src/generateApplicationForJob.ts",
     "pipeline": "tsx src/jobPipeline.ts",
     "test:sheets": "tsx src/testSheets.ts",
-    "test:email": "tsx scripts/test-send-single-email.ts",
-    "test:pipeline": "tsx scripts/test-full-pipeline.ts",
     "dev": "tsx watch src/generateApplicationForJob.ts"
   },
   "keywords": [
@@ -23,12 +21,12 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.10.0",
+    "@types/node": "^20.10.0", 
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "dotenv": "^17.2.3",
     "googleapis": "^128.0.0"
   }
 }
+
