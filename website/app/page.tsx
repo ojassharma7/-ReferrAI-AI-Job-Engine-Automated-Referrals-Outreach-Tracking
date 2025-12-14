@@ -5,12 +5,15 @@ import { SearchForm } from '@/components/search/SearchForm';
 import { ResultsDashboard } from '@/components/results/ResultsDashboard';
 import { SearchRequest, SearchResult } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle } from 'lucide-react';
 
 export default function Home() {
   const [results, setResults] = useState<SearchResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [candidateProfile, setCandidateProfile] = useState<string>('');
 
   const handleSearch = async (request: SearchRequest) => {
     setIsLoading(true);
@@ -59,6 +62,30 @@ export default function Home() {
           <SearchForm onSearch={handleSearch} isLoading={isLoading} />
         </div>
 
+        {/* Candidate Profile Input (optional, for AI generation) */}
+        {results && (
+          <Card className="mb-8">
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <Label htmlFor="candidateProfile" className="text-sm font-medium">
+                  Your Profile (Optional - for AI-generated emails/resumes)
+                </Label>
+                <Textarea
+                  id="candidateProfile"
+                  placeholder="Describe your background, experience, and relevant skills. This helps AI generate better personalized content..."
+                  value={candidateProfile}
+                  onChange={(e) => setCandidateProfile(e.target.value)}
+                  rows={4}
+                  className="text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This information is used to personalize AI-generated resumes, cover letters, and emails. It's stored locally and not sent anywhere except to generate content.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Error Message */}
         {error && (
           <Card className="mb-8 border-red-200 bg-red-50">
@@ -72,7 +99,7 @@ export default function Home() {
         )}
 
         {/* Results */}
-        {results && <ResultsDashboard results={results} />}
+        {results && <ResultsDashboard results={results} candidateProfile={candidateProfile} />}
 
         {/* Empty State */}
         {!results && !isLoading && !error && (

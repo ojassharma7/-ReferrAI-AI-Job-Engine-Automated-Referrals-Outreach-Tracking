@@ -13,6 +13,7 @@ export interface HunterContact {
   phone?: string;
   verified: boolean;
   confidence_score: number;
+  source?: string;
 }
 
 export interface HunterSearchResponse {
@@ -60,17 +61,18 @@ export async function searchContactsByDomain(
         if (partialData?.data?.emails) {
           // Return what we have despite the limit warning
           const contacts: HunterContact[] = (partialData.data.emails || []).map((email: any) => ({
-            email: email.value,
+            email: email.value || email.email || '',
             first_name: email.first_name || '',
             last_name: email.last_name || '',
             full_name: email.first_name && email.last_name 
               ? `${email.first_name} ${email.last_name}` 
-              : email.value.split('@')[0],
-            title: email.position || '',
-            linkedin_url: email.linkedin || undefined,
-            phone: email.phone || undefined,
-            verified: email.verification?.status === 'valid',
-            confidence_score: email.confidence || 0,
+              : email.first_name || email.last_name || email.value?.split('@')[0] || 'Unknown',
+            title: email.position || email.title || '',
+            linkedin_url: email.linkedin || email.linkedin_url || undefined,
+            phone: email.phone || email.phone_number || undefined,
+            verified: email.verification?.status === 'valid' || email.verified === true,
+            confidence_score: email.confidence || email.confidence_score || 0,
+            source: 'hunter',
           }));
           return contacts;
         }
@@ -84,17 +86,18 @@ export async function searchContactsByDomain(
 
     // Format Hunter.io response to our contact format
     const contacts: HunterContact[] = (data.data?.emails || []).map((email: any) => ({
-      email: email.value,
+      email: email.value || email.email || '',
       first_name: email.first_name || '',
       last_name: email.last_name || '',
       full_name: email.first_name && email.last_name 
         ? `${email.first_name} ${email.last_name}` 
-        : email.value.split('@')[0],
-      title: email.position || '',
-      linkedin_url: email.linkedin || undefined,
-      phone: email.phone || undefined,
-      verified: email.verification?.status === 'valid',
-      confidence_score: email.confidence || 0,
+        : email.first_name || email.last_name || email.value?.split('@')[0] || 'Unknown',
+      title: email.position || email.title || '',
+      linkedin_url: email.linkedin || email.linkedin_url || undefined,
+      phone: email.phone || email.phone_number || undefined,
+      verified: email.verification?.status === 'valid' || email.verified === true,
+      confidence_score: email.confidence || email.confidence_score || 0,
+      source: 'hunter', // Add source for tracking
     }));
 
     return contacts;

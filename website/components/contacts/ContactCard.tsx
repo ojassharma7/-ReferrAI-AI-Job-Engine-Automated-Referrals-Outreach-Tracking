@@ -1,15 +1,24 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Contact } from '@/lib/types';
-import { Mail, Linkedin, Phone, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Mail, Linkedin, Phone, CheckCircle2, AlertCircle, Send } from 'lucide-react';
+import { EmailComposer } from '@/components/generate/EmailComposer';
 
 interface ContactCardProps {
   contact: Contact;
+  jobTitle?: string;
+  company?: string;
+  candidateProfile?: string;
 }
 
-export function ContactCard({ contact }: ContactCardProps) {
+export function ContactCard({ contact, jobTitle, company, candidateProfile }: ContactCardProps) {
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+
   const getEmailStatusIcon = () => {
     if (contact.email_verified) {
       return <CheckCircle2 className="h-4 w-4 text-green-500" />;
@@ -38,7 +47,7 @@ export function ContactCard({ contact }: ContactCardProps) {
           {getEmailStatusBadge()}
         </div>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-3">
         <div className="flex items-center gap-2 text-sm">
           <Mail className="h-4 w-4 text-muted-foreground" />
           <span className="font-mono">{contact.email}</span>
@@ -70,6 +79,31 @@ export function ContactCard({ contact }: ContactCardProps) {
           <Badge variant="outline">{contact.seniority}</Badge>
           <Badge variant="outline">Score: {contact.relevance_score}</Badge>
         </div>
+
+        {jobTitle && company && (
+          <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="w-full mt-2" size="sm">
+                <Send className="mr-2 h-4 w-4" />
+                Send Email
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Compose Email</DialogTitle>
+                <DialogDescription>
+                  Generate and send a personalized referral email to {contact.full_name}
+                </DialogDescription>
+              </DialogHeader>
+              <EmailComposer
+                contact={contact}
+                jobTitle={jobTitle}
+                company={company}
+                candidateProfile={candidateProfile}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </CardContent>
     </Card>
   );

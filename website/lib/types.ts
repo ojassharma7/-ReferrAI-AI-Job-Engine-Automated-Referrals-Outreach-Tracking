@@ -37,7 +37,7 @@ export interface Job {
   job_type?: string;
   jd_text: string;
   jd_url?: string;
-  source: 'linkedin' | 'indeed' | 'glassdoor' | 'company';
+  source: 'linkedin' | 'indeed' | 'glassdoor' | 'company' | 'jsearch';
   posted_at?: string;
 }
 

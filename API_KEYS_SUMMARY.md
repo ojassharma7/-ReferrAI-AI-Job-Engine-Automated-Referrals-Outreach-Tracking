@@ -1,6 +1,6 @@
 # 📋 API Keys & Credentials Summary
 
-## 🔑 Total: **10 API Keys & Credentials**
+## 🔑 Total: **11 API Keys & Credentials**
 
 ---
 
@@ -42,7 +42,15 @@
 
 ---
 
-## 5️⃣ **GMAIL_CLIENT_ID**
+## 5️⃣ **JSEARCH_API_KEY**
+- **Purpose:** Job search for website (find job openings)
+- **Location:** `website/lib/job-search-client.ts`
+- **Where to get:** [RapidAPI JSearch](https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch) (FREE tier available)
+- **Required:** Optional (job search will be skipped if not set)
+
+---
+
+## 6️⃣ **GMAIL_CLIENT_ID**
 - **Purpose:** Gmail OAuth authentication
 - **Location:** `src/gmailClient.ts`
 - **Where to get:** [Google Cloud Console](https://console.cloud.google.com/) → OAuth 2.0 Client ID
@@ -50,7 +58,7 @@
 
 ---
 
-## 6️⃣ **GMAIL_CLIENT_SECRET**
+## 7️⃣ **GMAIL_CLIENT_SECRET**
 - **Purpose:** Gmail OAuth authentication
 - **Location:** `src/gmailClient.ts`
 - **Where to get:** Same as GMAIL_CLIENT_ID (comes in pair)
@@ -58,7 +66,7 @@
 
 ---
 
-## 7️⃣ **GMAIL_REFRESH_TOKEN**
+## 8️⃣ **GMAIL_REFRESH_TOKEN**
 - **Purpose:** Gmail OAuth token refresh
 - **Location:** `src/gmailClient.ts`
 - **Where to get:** [OAuth 2.0 Playground](https://developers.google.com/oauthplayground/)
@@ -66,7 +74,7 @@
 
 ---
 
-## 8️⃣ **GOOGLE_SHEETS_SPREADSHEET_ID**
+## 9️⃣ **GOOGLE_SHEETS_SPREADSHEET_ID**
 - **Purpose:** Google Sheets data storage
 - **Location:** 
   - `src/sheetsClient.ts`
@@ -76,7 +84,7 @@
 
 ---
 
-## 9️⃣ **GOOGLE_SHEETS_CLIENT_EMAIL**
+## 🔟 **GOOGLE_SHEETS_CLIENT_EMAIL**
 - **Purpose:** Google Sheets service account authentication
 - **Location:** 
   - `src/sheetsClient.ts`
@@ -86,7 +94,7 @@
 
 ---
 
-## 🔟 **GOOGLE_SHEETS_PRIVATE_KEY**
+## 1️⃣1️⃣ **GOOGLE_SHEETS_PRIVATE_KEY**
 - **Purpose:** Google Sheets service account authentication
 - **Location:** 
   - `src/sheetsClient.ts`
@@ -114,8 +122,9 @@
 ### Website Project (Next.js)
 - ✅ APOLLO_API_KEY
 - ✅ HUNTER_API_KEY (optional fallback)
+- ✅ JSEARCH_API_KEY (optional, for job search)
 
-**Total: 1-2 credentials**
+**Total: 1-3 credentials**
 
 ---
 
@@ -128,6 +137,7 @@
 
 ### **Optional (with fallbacks):**
 - HUNTER_API_KEY (fallback for Apollo)
+- JSEARCH_API_KEY (for job search on website)
 - GOOGLE_SHEETS_* (falls back to stubs)
 - JOBRIGHTS_API_KEY (not currently used)
 
@@ -138,6 +148,7 @@
 - [ ] GEMINI_API_KEY (for AI)
 - [ ] APOLLO_API_KEY (for website)
 - [ ] HUNTER_API_KEY (optional fallback)
+- [ ] JSEARCH_API_KEY (optional, for job search)
 - [ ] GMAIL_CLIENT_ID + SECRET + REFRESH_TOKEN (for emails)
 - [ ] GOOGLE_SHEETS_* (optional, for persistence)
 

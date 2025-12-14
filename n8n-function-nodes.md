@@ -64,7 +64,7 @@ return [{
 }];
 ```
 
-## 2. HandleGeminiReferralResponse
+## 2. HandleGeminiReferralResponseE
 
 **Purpose:** Parse Gemini LLM response and extract email content
 
