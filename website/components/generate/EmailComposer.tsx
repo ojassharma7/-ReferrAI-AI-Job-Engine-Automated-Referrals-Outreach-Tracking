@@ -203,4 +203,3 @@ export function EmailComposer({ contact, jobTitle, company, candidateProfile }: 
     </Card>
   );
 }
-
