@@ -9,8 +9,12 @@ ReferrAI/
 ├── 📄 README.md                    # Main project documentation
 ├── 📄 LICENSE                      # MIT License
 ├── 📄 PROJECT_STRUCTURE.md         # This file - explains organization
-├── 📄 package.json                 # Main Node.js project dependencies
-├── 📄 tsconfig.json                # TypeScript configuration
+├── 📄 CONTRIBUTING.md              # Contribution guidelines
+├── 📄 .env.example                 # Environment variables template
+│
+├── 📄 package.json                 # ⚠️ MUST stay in root (Node.js requirement)
+├── 📄 package-lock.json            # ⚠️ MUST stay in root (npm requirement)
+├── 📄 tsconfig.json                # ⚠️ MUST stay in root (TypeScript requirement)
 │
 ├── 📁 src/                         # Main Node.js pipeline source code
 │   ├── generateApplicationForJob.ts  # CLI entry point
@@ -140,6 +144,18 @@ npm run dev
 ```
 
 See **docs/website/QUICK_START.md** for detailed setup.
+
+## ⚠️ Files That Must Stay in Root
+
+These files are **required** to be in the root directory by their respective tools:
+
+- **`package.json`** - Node.js/npm requires this in root to identify the project
+- **`package-lock.json`** - npm lockfile, must be alongside package.json
+- **`tsconfig.json`** - TypeScript compiler looks for this in root by default
+- **`.env.example`** - Standard location for environment variable templates
+- **`.gitignore`** - Git requires this in root
+
+These are **not clutter** - they're essential configuration files that tools expect in the root.
 
 ## 📝 File Naming Conventions
 
