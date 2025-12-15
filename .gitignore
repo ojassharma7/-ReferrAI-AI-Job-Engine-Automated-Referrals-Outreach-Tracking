@@ -1,12 +1,18 @@
 # Dependencies
 node_modules/
+website/node_modules/
 
 # Build output
 dist/
+website/.next/
+website/out/
 
 # Environment variables
 .env
 .env.local
+.env.*.local
+website/.env.local
+website/.env.*.local
 
 # Outputs (generated resumes/cover letters)
 outputs/
@@ -24,4 +30,13 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+.nyc_output/
 

@@ -4,6 +4,37 @@
 
 ReferrAI is a fully automated referral-request workflow built with n8n, Gemini AI, and Google Sheets. It discovers relevant contacts (via Hunter.io and Jobrights.io), drafts personalized emails with Gemini, generates customized resumes and cover letters tailored to each job description, and sends them through Gmail while tracking responses.
 
+## 🚀 Quick Start
+
+### For the Website (Recommended)
+```bash
+cd website
+npm install
+cp .env.example .env.local
+# Edit .env.local with your API keys
+npm run dev
+```
+Visit [http://localhost:3000](http://localhost:3000)
+
+**See [docs/website/QUICK_START.md](docs/website/QUICK_START.md) for detailed setup.**
+
+### For the Main Pipeline
+```bash
+npm install
+cp .env.example .env
+# Edit .env with your API keys
+npm run pipeline <jobId>
+```
+
+## 📁 Project Structure
+
+This repository contains two main components:
+
+1. **Main Pipeline** (`src/`) - Node.js CLI application for automated job processing
+2. **Website** (`website/`) - Next.js web application for interactive contact discovery and job search
+
+**See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for complete organization guide.**
+
 ## Project Structure
 
 ```
