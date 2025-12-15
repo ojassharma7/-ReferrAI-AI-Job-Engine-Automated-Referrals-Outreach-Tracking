@@ -4,6 +4,154 @@
 
 ReferrAI is a fully automated referral-request workflow built with n8n, Gemini AI, and Google Sheets. It discovers relevant contacts (via Hunter.io and Jobrights.io), drafts personalized emails with Gemini, generates customized resumes and cover letters tailored to each job description, and sends them through Gmail while tracking responses.
 
+## 📊 System Architecture
+
+### High-Level Architecture
+
+```mermaid
+graph TB
+    subgraph "Input Layer"
+        A[Google Sheets<br/>Jobs Tab]
+    end
+    
+    subgraph "Orchestration Layer"
+        B[n8n Workflow Engine]
+        B1[Daily Trigger<br/>10:00 AM]
+        B2[Read Jobs]
+        B3[Execute Pipeline]
+    end
+    
+    subgraph "Processing Layer"
+        C[Node.js Pipeline]
+        C1[Load Job]
+        C2[Extract JD Insights]
+        C3[Generate Resume]
+        C4[Generate Cover Letter]
+        C5[Discover Contacts]
+        C6[Score Contacts]
+        C7[Generate Emails]
+        C8[Send Emails]
+        C9[Persist Data]
+    end
+    
+    subgraph "External APIs"
+        D1[Gemini AI<br/>Content Generation]
+        D2[Hunter.io<br/>Contact Discovery]
+        D3[Gmail API<br/>Email Sending]
+        D4[Google Sheets API<br/>Data Persistence]
+    end
+    
+    subgraph "Output Layer"
+        E1[Google Sheets<br/>Contacts Tab]
+        E2[Google Sheets<br/>Emails Tab]
+        E3[Google Sheets<br/>Events Tab]
+        E4[File System<br/>Resume & Cover Letter]
+    end
+    
+    subgraph "Monitoring"
+        F[n8n Reply Monitor<br/>Every 15 min]
+        F1[Check Gmail Replies]
+        F2[Update Sheets Status]
+    end
+    
+    A --> B
+    B --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> C
+    C --> C1
+    C1 --> C2
+    C2 --> C3
+    C3 --> C4
+    C4 --> C5
+    C5 --> C6
+    C6 --> C7
+    C7 --> C8
+    C8 --> C9
+    
+    C3 --> D1
+    C4 --> D1
+    C7 --> D1
+    C5 --> D2
+    C8 --> D3
+    C9 --> D4
+    
+    D4 --> E1
+    D4 --> E2
+    D4 --> E3
+    C3 --> E4
+    C4 --> E4
+    
+    D3 --> F
+    F --> F1
+    F1 --> F2
+    F2 --> E2
+```
+
+### Complete Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Sheets as Google Sheets
+    participant n8n as n8n Workflow
+    participant Pipeline as Node.js Pipeline
+    participant Gemini as Gemini AI
+    participant Hunter as Hunter.io
+    participant Gmail as Gmail API
+    
+    User->>Sheets: Add Job (job_id, company, jd_text, etc.)
+    Note over Sheets: Status = "ready"
+    
+    n8n->>n8n: Daily Trigger (10:00 AM)
+    n8n->>Sheets: Read Jobs (status = "ready")
+    Sheets-->>n8n: Return Job List
+    
+    loop For Each Job
+        n8n->>Pipeline: Execute pipeline <job_id>
+        
+        Pipeline->>Sheets: Load Job Data
+        Sheets-->>Pipeline: JobRow
+        
+        Pipeline->>Pipeline: Extract JD Insights
+        Note over Pipeline: Keywords, Requirements, Nice-to-haves
+        
+        Pipeline->>Gemini: Generate Resume
+        Gemini-->>Pipeline: Customized Resume
+        
+        Pipeline->>Gemini: Generate Cover Letter
+        Gemini-->>Pipeline: Cover Letter
+        
+        Pipeline->>Hunter: Discover Contacts (domain)
+        Hunter-->>Pipeline: Contact List
+        
+        Pipeline->>Pipeline: Score & Filter Contacts
+        
+        loop For Each Contact
+            Pipeline->>Gemini: Generate Referral Email
+            Gemini-->>Pipeline: Email (subject_a, subject_b, body)
+            
+            Pipeline->>Gmail: Send Email (with attachments)
+            Gmail-->>Pipeline: Thread ID, Message ID
+            
+            Pipeline->>Sheets: Persist Email
+            Pipeline->>Sheets: Persist Contact
+            Pipeline->>Sheets: Log Event
+        end
+        
+        Pipeline-->>n8n: Pipeline Complete
+        n8n->>Sheets: Update Job Status = "completed"
+    end
+    
+    Note over n8n,Gmail: Reply Monitor (Every 15 min)
+    n8n->>Gmail: Check for Replies
+    Gmail-->>n8n: Reply Messages
+    n8n->>Sheets: Update Email Status
+    n8n->>Sheets: Update Contact Status
+```
+
+**📖 For more detailed architecture diagrams, see [ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md) or [docs/ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md)**
+
 ## 🚀 Quick Start
 
 ### For the Website (Recommended)
