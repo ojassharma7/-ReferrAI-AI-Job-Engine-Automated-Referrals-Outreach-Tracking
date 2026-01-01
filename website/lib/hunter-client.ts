@@ -148,46 +148,51 @@ export async function searchDomainEmployees(
   
   if (contacts.length === 0) return [];
   
-  // Filter by role - be more lenient, return contacts that might be relevant
+  const roleLower = role.toLowerCase();
+  
+  // Define role-specific keywords for better matching
+  const roleKeywords: Record<string, string[]> = {
+    'data scientist': ['data scientist', 'data science', 'ml engineer', 'machine learning engineer', 'machine learning', 'ai engineer', 'data engineer', 'data analyst', 'research scientist', 'applied scientist'],
+    'software engineer': ['software engineer', 'software developer', 'developer', 'programmer', 'backend engineer', 'frontend engineer', 'full stack', 'engineer', 'sde'],
+    'product manager': ['product manager', 'product owner', 'pm', 'technical product manager'],
+    'data analyst': ['data analyst', 'business analyst', 'analyst', 'analytics'],
+  };
+  
+  // Get relevant keywords for this role
+  const relevantKeywords = roleKeywords[roleLower] || [roleLower];
+  
+  // Filter by role - be strict about matching
   const filtered = contacts.filter(contact => {
     const titleLower = (contact.title || '').toLowerCase();
-    const roleLower = role.toLowerCase();
     
     // Skip recruiters/HR (they're handled separately)
-    if (titleLower.includes('recruiter') || titleLower.includes('talent') || titleLower.includes('hr')) {
+    if (titleLower.includes('recruiter') || titleLower.includes('talent') || titleLower.includes('hr') || 
+        titleLower.includes('hiring') || titleLower.includes('people operations')) {
       return false;
     }
     
-    // Exact match
-    if (titleLower.includes(roleLower)) return true;
+    // Skip non-technical roles when searching for technical roles
+    const nonTechnicalRoles = ['administrative', 'assistant', 'executive', 'head', 'business operations', 'sales', 'marketing', 'finance'];
+    const isTechnicalRole = relevantKeywords.some(kw => 
+      kw.includes('engineer') || kw.includes('scientist') || kw.includes('developer') || kw.includes('analyst')
+    );
     
-    // Related roles
-    const relatedRoles: Record<string, string[]> = {
-      'data scientist': ['ml engineer', 'machine learning', 'data science', 'data', 'analyst', 'ai engineer'],
-      'software engineer': ['developer', 'programmer', 'engineer', 'software', 'engineer', 'tech'],
-      'product manager': ['product', 'pm', 'manager'],
-    };
-    
-    const related = relatedRoles[roleLower];
-    if (related) {
-      return related.some(r => titleLower.includes(r));
+    if (isTechnicalRole) {
+      const hasNonTechnicalKeyword = nonTechnicalRoles.some(ntr => titleLower.includes(ntr));
+      if (hasNonTechnicalKeyword && !titleLower.includes('engineer') && !titleLower.includes('scientist') && !titleLower.includes('developer')) {
+        return false;
+      }
     }
     
-    // If no specific match, return contacts with technical/managerial titles
-    const technicalKeywords = ['engineer', 'developer', 'manager', 'director', 'lead', 'senior', 'principal'];
-    return technicalKeywords.some(keyword => titleLower.includes(keyword));
+    // Check if title matches any of the relevant keywords
+    const matchesRole = relevantKeywords.some(keyword => titleLower.includes(keyword));
+    
+    return matchesRole;
   });
   
-  // If no matches found, return all non-recruiter contacts (up to 5)
-  if (filtered.length === 0) {
-    console.log('No domain employees found with strict filter, returning all non-recruiter contacts');
-    const nonRecruiters = contacts.filter(contact => {
-      const titleLower = (contact.title || '').toLowerCase();
-      return !titleLower.includes('recruiter') && !titleLower.includes('talent') && !titleLower.includes('hr');
-    });
-    return nonRecruiters.slice(0, 5);
-  }
+  console.log(`Filtered ${contacts.length} contacts to ${filtered.length} matching role "${role}"`);
   
+  // Only return filtered results - don't fallback to non-matching contacts
   return filtered;
 }
 
