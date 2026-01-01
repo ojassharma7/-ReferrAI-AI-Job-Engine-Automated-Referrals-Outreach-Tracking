@@ -35,7 +35,7 @@ export async function searchContactsByDomain(
   const params = new URLSearchParams({
     domain: domain,
     api_key: HUNTER_API_KEY,
-    limit: '10', // Free/Starter plan limit is 10
+    limit: '50', // Try to get more results (free tier may limit this)
   });
 
   if (department) {

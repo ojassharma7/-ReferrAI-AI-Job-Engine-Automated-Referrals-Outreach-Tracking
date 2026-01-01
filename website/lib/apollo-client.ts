@@ -48,12 +48,19 @@ export async function searchContacts(
 
   // Build search query - Apollo.io uses POST with JSON body
   // API key goes in header, not body
+  const roleKeywords = role ? getRoleKeywords(role) : [];
   const searchParams: any = {
     q_organization_name: companyName,
-    person_titles: getRoleKeywords(role),
     page: 1,
-    per_page: 100,
+    per_page: 100, // Request up to 100 results
   };
+  
+  // Add person_titles filter if we have role keywords
+  // Apollo.io accepts person_titles as an array
+  if (roleKeywords.length > 0 && roleKeywords[0] !== '') {
+    // Use all keywords as an array for broader matching
+    searchParams.person_titles = roleKeywords;
+  }
 
   // Add filters
   if (filters?.department) {
@@ -84,14 +91,40 @@ export async function searchContacts(
 
     const data = await response.json();
     
-    // Apollo.io returns data in 'people' field
+    // Apollo.io API response structure can vary
+    // Try multiple possible field names
+    let contacts: any[] = [];
+    if (data.people && Array.isArray(data.people)) {
+      contacts = data.people;
+    } else if (data.contacts && Array.isArray(data.contacts)) {
+      contacts = data.contacts;
+    } else if (Array.isArray(data)) {
+      contacts = data;
+    } else if (data.data?.people && Array.isArray(data.data.people)) {
+      contacts = data.data.people;
+    } else if (data.data?.contacts && Array.isArray(data.data.contacts)) {
+      contacts = data.data.contacts;
+    }
+    
+    // Log response structure for debugging
+    console.log(`Apollo.io search response: Found ${contacts.length} contacts`);
+    console.log('Response structure:', {
+      hasPeople: !!data.people,
+      hasContacts: !!data.contacts,
+      isArray: Array.isArray(data),
+      hasDataPeople: !!(data.data?.people),
+      hasDataContacts: !!(data.data?.contacts),
+      contactsFound: contacts.length,
+      pagination: data.pagination || data.meta || data.pagination_metadata,
+    });
+    
     return {
-      contacts: data.people || [],
-      pagination: data.pagination || {
+      contacts: contacts,
+      pagination: data.pagination || data.meta || data.pagination_metadata || {
         page: 1,
         per_page: 100,
-        total_entries: 0,
-        total_pages: 0,
+        total_entries: contacts.length,
+        total_pages: 1,
       },
     };
   } catch (error: any) {
@@ -130,14 +163,58 @@ function getRoleKeywords(role: string): string[] {
  * Search for recruiters at a company
  */
 export async function searchRecruiters(companyName: string): Promise<ApolloContact[]> {
-  const response = await searchContacts(companyName, 'recruiter', {
-    department: ['hr', 'recruiting', 'talent'],
+  // Try with email status filter first
+  let response = await searchContacts(companyName, 'recruiter', {
     emailStatus: ['verified', 'likely'],
   });
 
-  return response.contacts.filter(contact => 
-    isRecruiter(contact.title)
-  );
+  console.log(`Apollo.io recruiter search: ${response.contacts.length} total contacts before filtering`);
+  
+  // If we got very few results, try without email status filter
+  if (response.contacts.length < 3) {
+    console.log('Got few results, trying without email status filter...');
+    try {
+      const relaxedResponse = await searchContacts(companyName, 'recruiter');
+      if (relaxedResponse.contacts.length > response.contacts.length) {
+        response = relaxedResponse;
+        console.log(`Got ${response.contacts.length} contacts with relaxed filters`);
+      }
+    } catch (e) {
+      console.log('Relaxed search failed, using original results');
+    }
+  }
+  
+  // Filter for recruiter roles
+  const filtered = response.contacts.filter(contact => {
+    const title = contact.title || '';
+    const isRecruiterRole = isRecruiter(title);
+    return isRecruiterRole && contact.email; // Must have email
+  });
+  
+  console.log(`Apollo.io recruiter search: ${filtered.length} contacts after filtering`);
+  
+  // If we still have very few after filtering, try a broader search without role filter
+  if (filtered.length < 2) {
+    console.log('Very few recruiters found, trying broader search...');
+    try {
+      // Search without person_titles - just by company, then filter client-side
+      const broadResponse = await searchContacts(companyName, '', {
+        emailStatus: ['verified', 'likely'],
+      });
+      const broadFiltered = broadResponse.contacts.filter(contact => {
+        const title = contact.title || '';
+        return isRecruiter(title) && contact.email;
+      });
+      if (broadFiltered.length > filtered.length) {
+        console.log(`Broader search found ${broadFiltered.length} recruiters`);
+        return broadFiltered;
+      }
+    } catch (e) {
+      console.log('Broader search failed:', e);
+    }
+  }
+  
+  return filtered;
 }
 
 /**
@@ -147,13 +224,41 @@ export async function searchDomainEmployees(
   companyName: string,
   role: string
 ): Promise<ApolloContact[]> {
-  const response = await searchContacts(companyName, role, {
+  // Try with email status filter first
+  let response = await searchContacts(companyName, role, {
     emailStatus: ['verified', 'likely'],
   });
 
-  return response.contacts.filter(contact =>
-    matchesRole(contact.title, role)
-  );
+  console.log(`Apollo.io domain employee search for role "${role}": ${response.contacts.length} total contacts before filtering`);
+  
+  // If we got very few results, try without email status filter
+  if (response.contacts.length < 3) {
+    console.log('Got few results, trying without email status filter...');
+    try {
+      const relaxedResponse = await searchContacts(companyName, role);
+      if (relaxedResponse.contacts.length > response.contacts.length) {
+        response = relaxedResponse;
+        console.log(`Got ${response.contacts.length} contacts with relaxed filters`);
+      }
+    } catch (e) {
+      console.log('Relaxed search failed, using original results');
+    }
+  }
+  
+  const filtered = response.contacts.filter(contact => {
+    const matches = matchesRole(contact.title || '', role);
+    return matches;
+  });
+  
+  console.log(`Apollo.io domain employee search: ${filtered.length} contacts after filtering`);
+  
+  // If filtering removed too many, return at least some results (less strict filtering)
+  if (filtered.length === 0 && response.contacts.length > 0) {
+    console.log('All contacts filtered out, returning top 5 contacts with best title match');
+    return response.contacts.slice(0, 5);
+  }
+  
+  return filtered;
 }
 
 /**

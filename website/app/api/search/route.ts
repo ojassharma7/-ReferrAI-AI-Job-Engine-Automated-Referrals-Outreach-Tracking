@@ -45,6 +45,34 @@ export async function POST(request: NextRequest) {
       domainEmployees = await apolloSearchDomainEmployees(company, role);
       usingApollo = true;
       console.log(`Apollo.io: Found ${recruiters.length} recruiters and ${domainEmployees.length} domain employees`);
+      
+      // If Apollo returned very few results, try Hunter.io as supplement
+      if ((recruiters.length + domainEmployees.length) < 3 && domain && process.env.HUNTER_API_KEY) {
+        console.log('Apollo.io returned few results, supplementing with Hunter.io...');
+        try {
+          const hunterRecruiters = await hunterSearchRecruiters(domain);
+          const hunterEmployees = await hunterSearchDomainEmployees(domain, role);
+          
+          // Merge results (avoid duplicates by email)
+          const existingEmails = new Set([
+            ...recruiters.map(r => r.email?.toLowerCase()),
+            ...domainEmployees.map(e => e.email?.toLowerCase()),
+          ]);
+          
+          const newRecruiters = hunterRecruiters.filter(r => 
+            r.email && !existingEmails.has(r.email.toLowerCase())
+          );
+          const newEmployees = hunterEmployees.filter(e => 
+            e.email && !existingEmails.has(e.email.toLowerCase())
+          );
+          
+          recruiters = [...recruiters, ...newRecruiters];
+          domainEmployees = [...domainEmployees, ...newEmployees];
+          console.log(`After Hunter.io supplement: ${recruiters.length} recruiters and ${domainEmployees.length} domain employees`);
+        } catch (hunterError: any) {
+          console.warn('Hunter.io supplement failed:', hunterError.message);
+        }
+      }
     } catch (apolloError: any) {
       console.warn('Apollo.io search failed:', apolloError.message);
       
