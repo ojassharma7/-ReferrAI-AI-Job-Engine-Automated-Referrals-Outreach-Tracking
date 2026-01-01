@@ -31,14 +31,42 @@ export default function Home() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Search failed');
+        console.error('API error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+        });
+        throw new Error(errorData.error || `Search failed (${response.status})`);
       }
 
       const data = await response.json();
+      console.log('🔍 Full API Response:', data);
+      console.log('Search response received:', {
+        company: data.company?.name,
+        recruiters: data.recruiters?.length || 0,
+        domainEmployees: data.domainEmployees?.length || 0,
+        jobs: data.jobs?.length || 0,
+        totalContacts: data.totalContacts || 0,
+      });
+      
+      // Log detailed breakdown
+      if (data.recruiters) {
+        console.log('Recruiters array:', data.recruiters);
+      }
+      if (data.domainEmployees) {
+        console.log('Domain employees array:', data.domainEmployees);
+      }
+      
       setResults(data);
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      const errorMessage = err.message || 'An error occurred';
+      setError(errorMessage);
       console.error('Search error:', err);
+      console.error('Error details:', {
+        message: err.message,
+        stack: err.stack,
+        response: err.response,
+      });
     } finally {
       setIsLoading(false);
     }

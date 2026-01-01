@@ -7,9 +7,11 @@ import { searchJobs } from '@/lib/job-search-client';
 import { SearchResult, Job } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
+  console.log('🚀 /api/search endpoint called');
   try {
     const body = await request.json();
     const { company, role } = body;
+    console.log('📥 Request received:', { company, role });
 
     if (!company || !role) {
       return NextResponse.json(
@@ -37,10 +39,14 @@ export async function POST(request: NextRequest) {
     let domainEmployees: any[] = [];
     
     const domain = companyData.domain || extractDomain(company);
+    console.log(`Starting contact search for company: ${company}, role: ${role}, domain: ${domain}`);
+    console.log(`APOLLO_API_KEY present: ${!!process.env.APOLLO_API_KEY}`);
+    console.log(`HUNTER_API_KEY present: ${!!process.env.HUNTER_API_KEY}`);
     
     // Try Apollo.io first, fallback to Hunter.io
     let usingApollo = false;
     try {
+      console.log('Attempting Apollo.io search...');
       recruiters = await apolloSearchRecruiters(company);
       domainEmployees = await apolloSearchDomainEmployees(company, role);
       usingApollo = true;
@@ -78,35 +84,28 @@ export async function POST(request: NextRequest) {
       
       // Check if it's an authentication error
       if (apolloError.message.includes('401') || apolloError.message.includes('Invalid access credentials')) {
-        console.warn('Apollo.io API key appears invalid. Check your APOLLO_API_KEY in .env.local');
+        console.warn('⚠️ Apollo.io API key appears invalid. Check your APOLLO_API_KEY in .env.local');
+        console.warn('Falling back to Hunter.io...');
       }
       
-      // Fallback to Hunter.io if Apollo fails
+      // Always try Hunter.io fallback if Apollo fails
       if (domain && process.env.HUNTER_API_KEY) {
         try {
-          console.log('Falling back to Hunter.io...');
+          console.log('🔄 Falling back to Hunter.io...');
           recruiters = await hunterSearchRecruiters(domain);
           domainEmployees = await hunterSearchDomainEmployees(domain, role);
-          console.log(`Hunter.io: Found ${recruiters.length} recruiters and ${domainEmployees.length} domain employees`);
+          console.log(`✅ Hunter.io: Found ${recruiters.length} recruiters and ${domainEmployees.length} domain employees`);
         } catch (hunterError: any) {
-          console.error('Hunter.io also failed:', hunterError.message);
+          console.error('❌ Hunter.io also failed:', hunterError.message);
           // Don't throw - return empty arrays so user still sees company info
           recruiters = [];
           domainEmployees = [];
         }
       } else {
-        // No fallback available - but don't fail completely
-        console.warn('No Hunter.io API key set. Only Apollo.io results will be shown.');
+        // No fallback available
+        console.warn('⚠️ No Hunter.io API key set. Cannot fallback from Apollo.io.');
         recruiters = [];
         domainEmployees = [];
-        
-        // Only return error if it's not a free tier limitation
-        if (!apolloError.message.includes('free plan') && !apolloError.message.includes('not accessible')) {
-          // For auth errors, still allow the search to continue with empty results
-          if (apolloError.message.includes('401') || apolloError.message.includes('Invalid access credentials')) {
-            console.warn('Apollo.io authentication failed. Please check your API key.');
-          }
-        }
       }
     }
 
@@ -204,11 +203,23 @@ export async function POST(request: NextRequest) {
       totalJobs: jobs.length,
     };
 
+    console.log('Search completed successfully:', {
+      company: result.company.name,
+      recruiters: result.recruiters.length,
+      domainEmployees: result.domainEmployees.length,
+      jobs: result.jobs.length,
+      totalContacts: result.totalContacts,
+    });
+
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('Search API error:', error);
+    console.error('Error stack:', error.stack);
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { 
+        error: error.message || 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      },
       { status: 500 }
     );
   }

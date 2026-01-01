@@ -74,6 +74,10 @@ export async function searchContacts(
   const url = `${APOLLO_BASE_URL}/people/search`;
   
   try {
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -82,7 +86,10 @@ export async function searchContacts(
         'X-Api-Key': APOLLO_API_KEY, // API key in header
       },
       body: JSON.stringify(searchParams),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -129,6 +136,9 @@ export async function searchContacts(
     };
   } catch (error: any) {
     console.error('Apollo.io API error:', error);
+    if (error.name === 'AbortError') {
+      throw new Error('Apollo.io API request timed out after 30 seconds');
+    }
     throw new Error(`Failed to search contacts: ${error.message}`);
   }
 }
