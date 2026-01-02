@@ -152,12 +152,13 @@ export async function searchDomainEmployees(
     'data scientist': [
       'data scientist', 'data science', 'ml engineer', 'machine learning engineer', 
       'machine learning', 'ai engineer', 'research scientist', 'applied scientist',
-      'statistician', 'quantitative analyst'
+      'statistician', 'quantitative analyst', 'data science engineer'
     ],
     'software engineer': [
       'software engineer', 'software developer', 'backend engineer', 'frontend engineer',
       'full stack engineer', 'fullstack engineer', 'sde', 'software development engineer',
-      'systems engineer', 'application engineer', 'platform engineer', 'devops engineer'
+      'systems engineer', 'application engineer', 'platform engineer', 'devops engineer',
+      'site reliability engineer', 'sre'
     ],
     'product manager': [
       'product manager', 'product owner', 'technical product manager', 'product lead'
@@ -184,18 +185,30 @@ export async function searchDomainEmployees(
     
     if (!titleLower) return false;
     
-    // Always skip excluded roles
+    // Always skip excluded roles - be very strict
     if (alwaysExclude.some(excluded => titleLower.includes(excluded))) {
       return false;
     }
     
-    // Skip generic titles without role keywords (e.g., just "Manager", "Director")
+    // Skip generic titles without role keywords (e.g., just "Manager", "Director", "Head")
     const genericOnly = ['director', 'manager', 'executive', 'head', 'lead', 'senior', 'principal'];
     const isGenericOnly = genericOnly.some(gt => {
+      // Match patterns like "Head", "Director", "Manager" without role keywords
       const pattern = new RegExp(`^${gt}(\\s+of|\\s+$|$)`, 'i');
-      return pattern.test(titleLower) && !relevantKeywords.some(kw => titleLower.includes(kw));
+      if (pattern.test(titleLower)) {
+        // Only exclude if it doesn't contain any relevant keywords
+        return !relevantKeywords.some(kw => titleLower.includes(kw));
+      }
+      return false;
     });
     if (isGenericOnly) {
+      return false;
+    }
+    
+    // Additional check: if title is just "Head", "Executive", "Director" without context, exclude
+    if (['head', 'executive', 'director'].includes(titleLower) || 
+        titleLower.startsWith('head of') || 
+        titleLower.startsWith('executive ') && !relevantKeywords.some(kw => titleLower.includes(kw))) {
       return false;
     }
     
