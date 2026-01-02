@@ -103,7 +103,7 @@ export async function searchContactsByDomain(
       phone: email.phone || email.phone_number || undefined,
       verified: email.verification?.status === 'valid' || email.verified === true,
       confidence_score: email.confidence || email.confidence_score || 0,
-      source: 'hunter', // Add source for tracking
+      source: 'hunter',
     }));
 
     return contacts;
@@ -121,24 +121,18 @@ export async function searchRecruiters(domain: string): Promise<HunterContact[]>
   
   if (contacts.length === 0) return [];
   
-  // Filter for recruiter titles - be more lenient
-  const recruiterKeywords = ['recruiter', 'talent', 'hiring', 'hr', 'people', 'recruiting', 'acquisition'];
+  // Filter for recruiter titles - strict matching
+  const recruiterKeywords = ['recruiter', 'talent acquisition', 'hiring manager', 'hr partner', 'people operations'];
   const filtered = contacts.filter(contact => {
     const titleLower = (contact.title || '').toLowerCase();
     return recruiterKeywords.some(keyword => titleLower.includes(keyword));
   });
   
-  // If no recruiters found, return first 2 contacts as potential contacts
-  if (filtered.length === 0 && contacts.length > 0) {
-    console.log('No recruiters found with strict filter, returning first 2 contacts');
-    return contacts.slice(0, 2);
-  }
-  
   return filtered;
 }
 
 /**
- * Search for domain-specific employees
+ * Search for domain-specific employees - STRICT FILTERING
  */
 export async function searchDomainEmployees(
   domain: string,
@@ -146,57 +140,102 @@ export async function searchDomainEmployees(
 ): Promise<HunterContact[]> {
   const contacts = await searchContactsByDomain(domain);
   
-  if (contacts.length === 0) return [];
+  if (contacts.length === 0) {
+    console.log(`No contacts found for domain "${domain}"`);
+    return [];
+  }
   
-  const roleLower = role.toLowerCase();
+  const roleLower = role.toLowerCase().trim();
   
-  // Define role-specific keywords for better matching
+  // STRICT role-specific keywords - only exact/close matches
   const roleKeywords: Record<string, string[]> = {
-    'data scientist': ['data scientist', 'data science', 'ml engineer', 'machine learning engineer', 'machine learning', 'ai engineer', 'data engineer', 'data analyst', 'research scientist', 'applied scientist', 'statistician', 'quantitative'],
-    'software engineer': ['software engineer', 'software developer', 'developer', 'programmer', 'backend engineer', 'frontend engineer', 'full stack engineer', 'fullstack engineer', 'sde', 'engineer', 'architect', 'tech lead'],
-    'product manager': ['product manager', 'product owner', 'pm', 'technical product manager', 'product lead'],
-    'data analyst': ['data analyst', 'business analyst', 'analyst', 'analytics', 'data'],
+    'data scientist': [
+      'data scientist', 'data science', 'ml engineer', 'machine learning engineer', 
+      'machine learning', 'ai engineer', 'research scientist', 'applied scientist',
+      'statistician', 'quantitative analyst'
+    ],
+    'software engineer': [
+      'software engineer', 'software developer', 'backend engineer', 'frontend engineer',
+      'full stack engineer', 'fullstack engineer', 'sde', 'software development engineer',
+      'systems engineer', 'application engineer', 'platform engineer', 'devops engineer'
+    ],
+    'product manager': [
+      'product manager', 'product owner', 'technical product manager', 'product lead'
+    ],
+    'data analyst': [
+      'data analyst', 'business analyst', 'data analytics', 'analytics engineer'
+    ],
   };
   
-  // Get relevant keywords for this role
+  // Get relevant keywords - if role not found, use role itself
   const relevantKeywords = roleKeywords[roleLower] || [roleLower];
   
-  // Always exclude these roles regardless of search
-  const alwaysExclude = ['recruiter', 'talent acquisition', 'hiring', 'hr partner', 'hr manager', 'people operations', 'administrative assistant', 'executive assistant'];
+  // Always exclude these - never return them
+  const alwaysExclude = [
+    'recruiter', 'talent acquisition', 'hiring', 'hr partner', 'hr manager', 
+    'people operations', 'administrative assistant', 'executive assistant',
+    'executive recruiter', 'headhunter', 'sourcer', 'executive', 'head of',
+    'director of', 'manager of', 'operations support', 'business operations'
+  ];
   
-  // Filter by role - balanced approach
+  // STRICT filtering - only return contacts that clearly match
   const filtered = contacts.filter(contact => {
-    const titleLower = (contact.title || '').toLowerCase();
+    const titleLower = (contact.title || '').toLowerCase().trim();
     
-    // Always skip recruiters/HR/administrative
+    if (!titleLower) return false;
+    
+    // Always skip excluded roles
     if (alwaysExclude.some(excluded => titleLower.includes(excluded))) {
       return false;
     }
     
-    // Check if title matches any of the relevant keywords
-    const matchesRole = relevantKeywords.some(keyword => titleLower.includes(keyword));
+    // Skip generic titles without role keywords (e.g., just "Manager", "Director")
+    const genericOnly = ['director', 'manager', 'executive', 'head', 'lead', 'senior', 'principal'];
+    const isGenericOnly = genericOnly.some(gt => {
+      const pattern = new RegExp(`^${gt}(\\s+of|\\s+$|$)`, 'i');
+      return pattern.test(titleLower) && !relevantKeywords.some(kw => titleLower.includes(kw));
+    });
+    if (isGenericOnly) {
+      return false;
+    }
     
-    // For technical roles, also exclude clearly non-technical roles
-    const isTechnicalSearch = roleLower.includes('engineer') || roleLower.includes('scientist') || roleLower.includes('developer') || roleLower.includes('analyst');
-    if (isTechnicalSearch && matchesRole) {
-      // Exclude non-technical roles even if they contain the keyword
-      const nonTechnicalKeywords = ['sales', 'marketing', 'finance', 'operations', 'business development'];
+    // Must match one of the relevant keywords
+    const matchesRole = relevantKeywords.some(keyword => {
+      // Exact match or contains the keyword
+      return titleLower.includes(keyword);
+    });
+    
+    if (!matchesRole) return false;
+    
+    // For technical roles, exclude non-technical even if keyword matches
+    const isTechnicalSearch = roleLower.includes('engineer') || roleLower.includes('scientist') || 
+                               roleLower.includes('developer') || roleLower.includes('analyst');
+    
+    if (isTechnicalSearch) {
+      const nonTechnicalKeywords = [
+        'sales', 'marketing', 'finance', 'operations', 'business development',
+        'account manager', 'customer success', 'business operations', 'strategy',
+        'risk manager', 'support executive'
+      ];
+      
       const hasNonTechnical = nonTechnicalKeywords.some(nt => titleLower.includes(nt));
-      if (hasNonTechnical && !titleLower.includes('engineer') && !titleLower.includes('scientist') && !titleLower.includes('developer') && !titleLower.includes('analyst')) {
-        return false;
+      if (hasNonTechnical) {
+        // Only allow if clearly technical (e.g., "Sales Engineer" is OK)
+        const hasTechnicalKeyword = titleLower.includes('engineer') || 
+                                    titleLower.includes('scientist') || 
+                                    titleLower.includes('developer') ||
+                                    titleLower.includes('analyst');
+        if (!hasTechnicalKeyword) {
+          return false;
+        }
       }
     }
     
-    return matchesRole;
+    return true;
   });
   
-  console.log(`Hunter.io returned ${contacts.length} contacts for domain "${domain}", filtered to ${filtered.length} matching role "${role}"`);
+  console.log(`✅ Filtered ${contacts.length} contacts → ${filtered.length} matching "${role}"`);
   
-  // If we have very few results, explain the limitation
-  if (filtered.length < 3 && contacts.length > 0) {
-    console.warn(`⚠️ Hunter.io free tier returns the same ${contacts.length} contacts regardless of role. Only ${filtered.length} matched "${role}". Consider using Apollo.io for better role-specific filtering.`);
-  }
-  
+  // Return ONLY matching contacts - no fallback to random contacts
   return filtered;
 }
-
