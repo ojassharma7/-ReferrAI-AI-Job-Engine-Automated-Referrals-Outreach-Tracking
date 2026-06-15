@@ -24,7 +24,7 @@ export interface Contact {
   linkedin_url?: string;
   phone?: string;
   email_verified: boolean;
-  email_status: 'verified' | 'likely' | 'guessed' | 'invalid';
+  email_status: 'verified' | 'likely' | 'guessed' | 'invalid' | 'unknown';
   relevance_score: number;
   source: 'apollo' | 'hunter' | 'zoominfo';
 }
@@ -37,7 +37,7 @@ export interface Job {
   job_type?: string;
   jd_text: string;
   jd_url?: string;
-  source: 'linkedin' | 'indeed' | 'glassdoor' | 'company' | 'jsearch';
+  source: 'linkedin' | 'indeed' | 'glassdoor' | 'company' | 'jsearch' | 'manual';
   posted_at?: string;
 }
 
@@ -48,6 +48,8 @@ export interface SearchResult {
   jobs: Job[];
   totalContacts: number;
   totalJobs: number;
+  // True when any data source returned demo/mock data (missing API key).
+  isMock?: boolean;
 }
 
 export interface SearchRequest {

@@ -2,23 +2,32 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { generateCoverLetter } from '@/lib/gemini-client';
+import { getAppUser } from '@/lib/auth';
+import { enforceLimit, recordUsage } from '@/lib/usage';
+import { saveDocument } from '@/lib/db/documents';
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getAppUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const limit = await enforceLimit(user, 'generate');
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: limit.message, code: 'limit_reached' },
+        { status: 402 },
+      );
+    }
+
     const body = await request.json();
-    const { candidateProfile, jobTitle, company, jobDescription, contactName } = body;
+    const { candidateProfile, jobTitle, company, jobDescription, contactName, jobId } = body;
 
     if (!candidateProfile || !jobTitle || !company || !jobDescription) {
       return NextResponse.json(
         { error: 'Missing required fields: candidateProfile, jobTitle, company, jobDescription' },
         { status: 400 }
-      );
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json(
-        { error: 'GEMINI_API_KEY is not configured' },
-        { status: 500 }
       );
     }
 
@@ -29,6 +38,13 @@ export async function POST(request: NextRequest) {
       jobDescription,
       contactName
     );
+
+    await saveDocument(user, {
+      type: 'cover_letter',
+      text_content: coverLetter,
+      job_external_id: jobId,
+    });
+    await recordUsage(user, 'generate');
 
     return NextResponse.json({
       success: true,
@@ -42,4 +58,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

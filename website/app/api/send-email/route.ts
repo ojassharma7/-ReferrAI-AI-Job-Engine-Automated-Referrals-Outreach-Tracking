@@ -2,6 +2,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
+import { getAppUser } from '@/lib/auth';
+import { enforceLimit, recordUsage } from '@/lib/usage';
+import { saveEmail } from '@/lib/db/emails';
 
 let gmailClient: any = null;
 
@@ -57,8 +60,21 @@ function createMessage(
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getAppUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const limit = await enforceLimit(user, 'send');
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: limit.message, code: 'limit_reached' },
+        { status: 402 },
+      );
+    }
+
     const body = await request.json();
-    const { to, subject, emailBody } = body;
+    const { to, subject, emailBody, jobId } = body;
 
     if (!to || !subject || !emailBody) {
       return NextResponse.json(
@@ -83,6 +99,17 @@ export async function POST(request: NextRequest) {
         raw: rawMessage,
       },
     });
+
+    await saveEmail(user, {
+      subject,
+      body: emailBody,
+      status: 'sent',
+      thread_id: response.data.threadId ?? undefined,
+      contact_email: to,
+      job_external_id: jobId,
+      sent_at: new Date().toISOString(),
+    });
+    await recordUsage(user, 'send');
 
     return NextResponse.json({
       success: true,

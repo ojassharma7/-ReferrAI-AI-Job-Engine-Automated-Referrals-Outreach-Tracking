@@ -1,7 +1,16 @@
 // Gemini API client for website
 
+import {
+  geminiLive,
+  mockResume,
+  mockCoverLetter,
+  mockReferralEmail,
+} from '@/lib/mock';
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-pro';
+// NOTE: the legacy "gemini-pro" id is deprecated. Default to a current model;
+// override with GEMINI_MODEL (e.g. gemini-1.5-pro, gemini-2.0-flash).
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
 export interface GeminiResponse {
   text: string;
@@ -89,6 +98,8 @@ export async function generateResume(
   jobDescription: string,
   keywords: string[] = [],
 ): Promise<string> {
+  if (!geminiLive()) return mockResume(baseResume, jobTitle, company);
+
   const systemPrompt = `You are an expert resume editor. Keep the candidate's experience authentic; never fabricate roles, employers, or achievements. Adapt content to the job description, reordering or rephrasing bullets to emphasize the most relevant work. Output a full resume text that highlights relevant experience.`;
 
   const userPrompt = `Base resume content:
@@ -122,6 +133,8 @@ export async function generateCoverLetter(
   jobDescription: string,
   contactName?: string,
 ): Promise<string> {
+  if (!geminiLive()) return mockCoverLetter(jobTitle, company);
+
   const systemPrompt = `You are an expert cover letter writer. Write professional, concise cover letters that highlight the candidate's relevant experience and enthusiasm for the role.`;
 
   const userPrompt = `Candidate profile:
@@ -157,6 +170,8 @@ export async function generateReferralEmail(
   contactTitle: string,
   proofPoint?: string,
 ): Promise<{ subject_a: string; subject_b: string; body: string }> {
+  if (!geminiLive()) return mockReferralEmail(jobTitle, company, contactName);
+
   const systemPrompt = `You are a professional requesting referrals. Write concise, respectful outreach emails that sound human. Always respond ONLY with valid JSON in the form {"subject_a":"","subject_b":"","body":""}. Do not add explanations or extra keys. Emails must be truthful and aligned with the provided profile and job.`;
 
   const userPrompt = `Candidate profile:

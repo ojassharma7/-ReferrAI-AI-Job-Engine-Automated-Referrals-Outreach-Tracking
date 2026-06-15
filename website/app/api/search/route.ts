@@ -5,10 +5,28 @@ import { searchRecruiters as apolloSearchRecruiters, searchDomainEmployees as ap
 import { searchRecruiters as hunterSearchRecruiters, searchDomainEmployees as hunterSearchDomainEmployees } from '@/lib/hunter-client';
 import { searchJobs } from '@/lib/job-search-client';
 import { SearchResult, Job } from '@/lib/types';
+import { getAppUser } from '@/lib/auth';
+import { persistSearchResult } from '@/lib/db/persist';
+import { enforceLimit, recordUsage } from '@/lib/usage';
+import { contactsAreMock, jobsAreMock, mockRecruiters, mockDomainEmployees } from '@/lib/mock';
 
 export async function POST(request: NextRequest) {
   console.log('🚀 /api/search endpoint called');
   try {
+    const user = await getAppUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    // Enforce the per-plan usage limit before doing any paid work.
+    const limit = await enforceLimit(user, 'search');
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: limit.message, code: 'limit_reached' },
+        { status: 402 },
+      );
+    }
+
     const body = await request.json();
     const { company, role } = body;
     console.log('📥 Request received:', { company, role });
@@ -109,6 +127,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 3b. Last-resort demo data: only when NO contact provider is configured.
+    // (If only one of Apollo/Hunter is live, the live one is used above.)
+    if (contactsAreMock()) {
+      console.log('No contact provider configured — returning demo contacts.');
+      recruiters = mockRecruiters(company);
+      domainEmployees = mockDomainEmployees(company, role);
+    }
+
     // 4. Format company data
     const companyResult = {
       id: companyData.id || `company-${Date.now()}`,
@@ -201,6 +227,7 @@ export async function POST(request: NextRequest) {
       jobs: jobs,
       totalContacts: formattedRecruiters.length + formattedDomainEmployees.length,
       totalJobs: jobs.length,
+      isMock: contactsAreMock() || jobsAreMock(),
     };
 
     console.log('Search completed successfully:', {
@@ -210,6 +237,10 @@ export async function POST(request: NextRequest) {
       jobs: result.jobs.length,
       totalContacts: result.totalContacts,
     });
+
+    // Persist (best-effort) and record usage against the plan limit.
+    await persistSearchResult(user, result);
+    await recordUsage(user, 'search');
 
     return NextResponse.json(result);
   } catch (error: any) {
