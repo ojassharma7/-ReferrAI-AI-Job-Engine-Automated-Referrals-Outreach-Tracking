@@ -12,6 +12,7 @@ import { isSupabaseConfigured } from '@/lib/supabase/config';
 import { mockSequences } from '@/lib/mock';
 import { draftSequence } from '@/lib/outreach/draft';
 import type { SequenceView, SequenceStatus } from '@/lib/outreach/constants';
+import { gmailConfigured, sendGmail, threadHasReply } from '@/lib/email/gmail';
 
 const DAY_MS = 86_400_000;
 
@@ -198,18 +199,59 @@ export async function processDueSteps(): Promise<{
 
     const { data: due } = await supabase
       .from('sequence_steps')
-      .select('id,sequence_id,user_id,subject,body,sequences(status)')
+      .select('id,sequence_id,user_id,step_no,subject,body,sequences(status,contact_email,thread_id)')
       .eq('status', 'pending')
       .lte('scheduled_for', nowISO)
       .limit(200);
 
+    // Earlier steps first so a thread exists before follow-ups reference it.
+    const steps = ((due ?? []) as any[]).sort((a, b) => a.step_no - b.step_no);
+
+    const live = gmailConfigured();
     let processed = 0;
     const touchedSequences = new Set<string>();
+    // Thread id discovered for a sequence during this run (step 1 -> follow-ups).
+    const threadBySeq = new Map<string, string | undefined>();
 
-    for (const step of (due ?? []) as any[]) {
-      if (step.sequences?.status !== 'active') continue;
+    for (const step of steps) {
+      const seq = step.sequences;
+      if (seq?.status !== 'active') continue;
 
-      // Dry-run "send": log an email row. Replace with real Gmail send later.
+      const recipient: string | undefined = seq.contact_email || undefined;
+      const threadId = threadBySeq.get(step.sequence_id) ?? seq.thread_id ?? undefined;
+
+      let sentThreadId: string | undefined = threadId;
+
+      if (live) {
+        if (!recipient) {
+          // Can't deliver without an address — skip this step.
+          await supabase.from('sequence_steps').update({ status: 'skipped' }).eq('id', step.id);
+          touchedSequences.add(step.sequence_id);
+          continue;
+        }
+        const res = await sendGmail({
+          to: recipient,
+          subject: step.subject,
+          body: step.body,
+          threadId,
+        });
+        if (!res.success) {
+          // Leave pending; the next cron run retries.
+          continue;
+        }
+        sentThreadId = res.threadId ?? threadId;
+        if (sentThreadId && sentThreadId !== seq.thread_id) {
+          await supabase
+            .from('sequences')
+            .update({ thread_id: sentThreadId })
+            .eq('id', step.sequence_id);
+        }
+        threadBySeq.set(step.sequence_id, sentThreadId);
+        await supabase.from('usage_log').insert({ user_id: step.user_id, action: 'send' });
+      }
+      // When Gmail isn't configured we fall through to a dry-run: log the email
+      // and mark the step sent so the sequence flow is visible end-to-end.
+
       const { data: email } = await supabase
         .from('emails')
         .insert({
@@ -217,6 +259,7 @@ export async function processDueSteps(): Promise<{
           subject: step.subject,
           body: step.body,
           status: 'sent',
+          thread_id: sentThreadId ?? null,
           sent_at: nowISO,
         })
         .select('id')
@@ -247,5 +290,48 @@ export async function processDueSteps(): Promise<{
   } catch (err) {
     console.warn('processDueSteps failed:', err instanceof Error ? err.message : err);
     return { processed: 0, note: 'error' };
+  }
+}
+
+// Cron worker: poll Gmail threads of active sequences and flip any that got a
+// reply to 'replied' (which skips their remaining steps). No-op without Gmail.
+export async function checkReplies(): Promise<{
+  checked: number;
+  replied: number;
+  demo?: boolean;
+  note?: string;
+}> {
+  if (!isSupabaseConfigured()) return { checked: 0, replied: 0, demo: true };
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return { checked: 0, replied: 0, note: 'SUPABASE_SERVICE_ROLE_KEY not set' };
+  }
+  if (!gmailConfigured()) return { checked: 0, replied: 0, note: 'Gmail not configured' };
+
+  try {
+    const supabase = createServiceClient();
+    const { data: active } = await supabase
+      .from('sequences')
+      .select('id,thread_id')
+      .eq('status', 'active')
+      .not('thread_id', 'is', null)
+      .limit(500);
+
+    let replied = 0;
+    const rows = (active ?? []) as { id: string; thread_id: string }[];
+    for (const seq of rows) {
+      if (!(await threadHasReply(seq.thread_id))) continue;
+      await supabase.from('sequences').update({ status: 'replied' }).eq('id', seq.id);
+      await supabase
+        .from('sequence_steps')
+        .update({ status: 'skipped' })
+        .eq('sequence_id', seq.id)
+        .eq('status', 'pending');
+      replied += 1;
+    }
+
+    return { checked: rows.length, replied };
+  } catch (err) {
+    console.warn('checkReplies failed:', err instanceof Error ? err.message : err);
+    return { checked: 0, replied: 0, note: 'error' };
   }
 }
