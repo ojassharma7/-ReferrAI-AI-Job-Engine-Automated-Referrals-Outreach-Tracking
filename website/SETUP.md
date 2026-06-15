@@ -76,7 +76,48 @@ and the webhook syncs the user's plan + raises their usage limits.
 > Until Supabase + Stripe are both configured, usage limits are **not enforced**
 > (demo mode), so you can try everything freely.
 
-## 5. Gmail sending (optional — outreach)
+## 5. Gmail sending (outreach emails + sequence follow-ups)
 
-Set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` to send via
-Gmail. (Phase 4 will move this to per-user Gmail OAuth for deliverability.)
+Powers the **Send Email** button and real sending for **outreach sequences**.
+One Gmail account via env (per-user Gmail OAuth is a future multi-tenant step).
+
+1. Google Cloud Console → **enable the Gmail API**.
+2. **OAuth consent screen**: External; add your own Google account as a *test user*.
+   Add scopes `https://www.googleapis.com/auth/gmail.send` **and**
+   `https://www.googleapis.com/auth/gmail.readonly` (readonly is needed for reply
+   detection in §6).
+3. **Credentials → OAuth client ID** (type *Desktop app*). Note the client id/secret.
+4. Mint a refresh token with those scopes — easiest via the
+   [OAuth Playground](https://developers.google.com/oauthplayground): gear icon →
+   *Use your own OAuth credentials* → paste client id/secret → authorize the two
+   Gmail scopes → exchange for tokens → copy the **refresh token**.
+5. In `website/.env.local`:
+   ```
+   GMAIL_CLIENT_ID=...
+   GMAIL_CLIENT_SECRET=...
+   GMAIL_REFRESH_TOKEN=...
+   GMAIL_FROM_EMAIL=you@gmail.com
+   ```
+
+Without these, sending degrades to a **dry-run** (sequence steps are marked sent
+and logged, but no real email goes out), so the flow stays demo-able.
+
+## 6. Outreach automation (send follow-ups + detect replies)
+
+Sequences are driven by two cron endpoints — point any scheduler at them:
+
+| Endpoint | Does |
+| --- | --- |
+| `POST /api/sequences/cron` | Sends every step whose `scheduled_for` is due (threaded follow-ups). |
+| `POST /api/sequences/check-replies` | Polls each active thread; a reply flips the sequence to **replied** and skips remaining steps. |
+
+- **Auth:** set `CRON_SECRET`, then send it as an `x-cron-secret` header (or
+  `Authorization: Bearer <secret>`). If `CRON_SECRET` is unset the endpoints are open (dev only).
+- **Requirements:** Supabase **service-role key** (§1) for both; Gmail (§5) for real
+  sends/reply-reads — otherwise `cron` dry-runs and `check-replies` no-ops.
+- **Migrations:** also run [`0002_sequences.sql`](supabase/migrations/0002_sequences.sql)
+  and [`0003_sequence_threads.sql`](supabase/migrations/0003_sequence_threads.sql).
+
+Scheduler options: **Vercel Cron** (`vercel.json` hitting the GET form), GitHub
+Actions / cron-job.org (with the header), or the legacy **n8n** workflows. A few
+times a day is plenty.
