@@ -1,7 +1,13 @@
-import { Card, CardContent } from '@/components/ui/card';
-import { KanbanSquare } from 'lucide-react';
+import { getAppUser } from '@/lib/auth';
+import { listApplications } from '@/lib/db/applications';
+import { PipelineBoard } from '@/components/dashboard/PipelineBoard';
 
-export default function PipelinePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function PipelinePage() {
+  const user = await getAppUser();
+  const applications = user ? await listApplications(user) : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -10,15 +16,7 @@ export default function PipelinePage() {
           Track every application from saved to offer.
         </p>
       </div>
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-muted-foreground">
-          <KanbanSquare className="h-10 w-10" />
-          <p className="max-w-sm">
-            Your kanban board (saved → contacted → replied → referred → interview)
-            arrives in Phase 5. Searches and outreach you run now are already saved.
-          </p>
-        </CardContent>
-      </Card>
+      <PipelineBoard initial={applications} isDemo={!!user?.isDemo} />
     </div>
   );
 }

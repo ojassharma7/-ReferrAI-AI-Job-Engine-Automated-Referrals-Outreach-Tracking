@@ -177,6 +177,48 @@ Your Name
 `;
 }
 
+// ---- Pipeline board mocks (no Supabase) ----
+export function mockApplications() {
+  const day = 86_400_000;
+  const mk = (
+    i: number,
+    status: string,
+    company: string,
+    title: string,
+    contact: { full_name: string; title: string } | null,
+  ) => ({
+    id: `mock-app-${i}`,
+    status,
+    notes: null as string | null,
+    created_at: new Date(Date.now() - i * 3 * day).toISOString(),
+    updated_at: new Date(Date.now() - i * day).toISOString(),
+    job: { title, company, location: 'Remote' },
+    contact: contact
+      ? { full_name: contact.full_name, title: contact.title, email: null as string | null }
+      : null,
+  });
+  return [
+    mk(1, 'saved', 'Stripe', 'Staff Backend Engineer', null),
+    mk(6, 'saved', 'Vercel', 'Developer Advocate', null),
+    mk(2, 'contacted', 'Airbnb', 'Senior Data Scientist', {
+      full_name: 'Maya Kim',
+      title: 'Data Science Manager',
+    }),
+    mk(3, 'replied', 'Notion', 'Product Engineer', {
+      full_name: 'Liam Garcia',
+      title: 'Engineering Manager',
+    }),
+    mk(4, 'referred', 'Figma', 'Frontend Engineer', {
+      full_name: 'Priya Patel',
+      title: 'Staff Engineer',
+    }),
+    mk(5, 'interview', 'Linear', 'Full-stack Engineer', {
+      full_name: 'Diego Rossi',
+      title: 'Senior Engineer',
+    }),
+  ];
+}
+
 export function mockReferralEmail(jobTitle: string, company: string, contactName: string) {
   const first = contactName.split(' ')[0] || 'there';
   return {
