@@ -2,6 +2,8 @@
 // Note: Free tier may have limited endpoint access
 // Check: https://docs.apollo.io/ for available endpoints
 
+import { apolloLive, mockCompany } from '@/lib/mock';
+
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
 const APOLLO_BASE_URL = 'https://api.apollo.io/v1';
 
@@ -320,8 +322,9 @@ function matchesRole(title: string, role: string): boolean {
  * Lookup company information
  */
 export async function lookupCompany(companyName: string) {
-  if (!APOLLO_API_KEY) {
-    throw new Error('APOLLO_API_KEY is not set');
+  if (!apolloLive()) {
+    // Demo mode: return realistic sample company info.
+    return mockCompany(companyName);
   }
 
   const url = `${APOLLO_BASE_URL}/organizations/search`;
@@ -331,7 +334,7 @@ export async function lookupCompany(companyName: string) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Api-Key': APOLLO_API_KEY, // API key in header
+        'X-Api-Key': APOLLO_API_KEY as string, // guaranteed by apolloLive() above
       },
       body: JSON.stringify({
         q_name: companyName,

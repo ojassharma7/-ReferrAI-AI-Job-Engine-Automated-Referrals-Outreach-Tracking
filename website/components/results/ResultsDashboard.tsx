@@ -10,7 +10,7 @@ import { CoverLetterGenerator } from '@/components/generate/CoverLetterGenerator
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Building2, Users, Briefcase, FileText, Mail, Sparkles } from 'lucide-react';
+import { Building2, Users, Briefcase, FileText, Mail, Sparkles, Plus, Check, Loader2 } from 'lucide-react';
 
 interface ResultsDashboardProps {
   results: SearchResult;
@@ -21,6 +21,29 @@ export function ResultsDashboard({ results, candidateProfile }: ResultsDashboard
   const [selectedJob, setSelectedJob] = useState<typeof results.jobs[0] | null>(null);
   const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
   const [isCoverLetterDialogOpen, setIsCoverLetterDialogOpen] = useState(false);
+  const [pipelineState, setPipelineState] = useState<Record<string, 'idle' | 'adding' | 'added'>>({});
+
+  const addToPipeline = async (job: typeof results.jobs[0]) => {
+    setPipelineState((s) => ({ ...s, [job.id]: 'adding' }));
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobExternalId: job.id,
+          jobTitle: job.title,
+          company: results.company.name,
+          jobLocation: job.location,
+          jdText: job.jd_text,
+          jdUrl: job.jd_url,
+          jobSource: job.source,
+        }),
+      });
+      setPipelineState((s) => ({ ...s, [job.id]: res.ok ? 'added' : 'idle' }));
+    } catch {
+      setPipelineState((s) => ({ ...s, [job.id]: 'idle' }));
+    }
+  };
 
   // Get job title and company from first job or use defaults
   const jobTitle = selectedJob?.title || results.jobs[0]?.title || '';
@@ -223,7 +246,7 @@ export function ResultsDashboard({ results, candidateProfile }: ResultsDashboard
                     <p className="text-sm text-muted-foreground line-clamp-3 mb-4">
                       {job.jd_text}
                     </p>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       {job.jd_url && (
                         <a
                           href={job.jd_url}
@@ -235,18 +258,46 @@ export function ResultsDashboard({ results, candidateProfile }: ResultsDashboard
                           View Job & Apply →
                         </a>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedJob(job);
-                          setIsResumeDialogOpen(true);
-                        }}
-                      >
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        Generate Resume
-                      </Button>
+                      <div className="ml-auto flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={pipelineState[job.id] === 'adding' || pipelineState[job.id] === 'added'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addToPipeline(job);
+                          }}
+                        >
+                          {pipelineState[job.id] === 'added' ? (
+                            <>
+                              <Check className="mr-2 h-4 w-4" />
+                              Added
+                            </>
+                          ) : pipelineState[job.id] === 'adding' ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Adding…
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Add to pipeline
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedJob(job);
+                            setIsResumeDialogOpen(true);
+                          }}
+                        >
+                          <Sparkles className="mr-2 h-4 w-4" />
+                          Generate Resume
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

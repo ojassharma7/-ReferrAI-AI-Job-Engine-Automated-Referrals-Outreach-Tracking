@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Contact } from '@/lib/types';
-import { Mail, Linkedin, Phone, CheckCircle2, AlertCircle, Send } from 'lucide-react';
+import { Mail, Linkedin, Phone, CheckCircle2, AlertCircle, Send, CalendarClock, Check, Loader2 } from 'lucide-react';
 import { EmailComposer } from '@/components/generate/EmailComposer';
 
 interface ContactCardProps {
@@ -18,6 +18,28 @@ interface ContactCardProps {
 
 export function ContactCard({ contact, jobTitle, company, candidateProfile }: ContactCardProps) {
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [seqState, setSeqState] = useState<'idle' | 'starting' | 'started'>('idle');
+
+  const startSequence = async () => {
+    setSeqState('starting');
+    try {
+      const res = await fetch('/api/sequences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactEmail: contact.email,
+          contactName: contact.full_name,
+          contactTitle: contact.title,
+          company,
+          jobTitle,
+          candidateProfile,
+        }),
+      });
+      setSeqState(res.ok ? 'started' : 'idle');
+    } catch {
+      setSeqState('idle');
+    }
+  };
 
   const getEmailStatusIcon = () => {
     if (contact.email_verified) {
@@ -81,28 +103,54 @@ export function ContactCard({ contact, jobTitle, company, candidateProfile }: Co
         </div>
 
         {jobTitle && company && (
-          <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-full mt-2" size="sm">
-                <Send className="mr-2 h-4 w-4" />
-                Send Email
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Compose Email</DialogTitle>
-                <DialogDescription>
-                  Generate and send a personalized referral email to {contact.full_name}
-                </DialogDescription>
-              </DialogHeader>
-              <EmailComposer
-                contact={contact}
-                jobTitle={jobTitle}
-                company={company}
-                candidateProfile={candidateProfile}
-              />
-            </DialogContent>
-          </Dialog>
+          <div className="space-y-2 pt-2">
+            <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="w-full" size="sm">
+                  <Send className="mr-2 h-4 w-4" />
+                  Send Email
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Compose Email</DialogTitle>
+                  <DialogDescription>
+                    Generate and send a personalized referral email to {contact.full_name}
+                  </DialogDescription>
+                </DialogHeader>
+                <EmailComposer
+                  contact={contact}
+                  jobTitle={jobTitle}
+                  company={company}
+                  candidateProfile={candidateProfile}
+                />
+              </DialogContent>
+            </Dialog>
+            <Button
+              variant="outline"
+              className="w-full"
+              size="sm"
+              disabled={seqState !== 'idle'}
+              onClick={startSequence}
+            >
+              {seqState === 'started' ? (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Sequence started
+                </>
+              ) : seqState === 'starting' ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Starting…
+                </>
+              ) : (
+                <>
+                  <CalendarClock className="mr-2 h-4 w-4" />
+                  Start sequence
+                </>
+              )}
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>

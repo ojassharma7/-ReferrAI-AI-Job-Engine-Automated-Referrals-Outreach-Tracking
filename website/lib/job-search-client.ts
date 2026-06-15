@@ -1,6 +1,8 @@
 // Job search client using JSearch API (RapidAPI)
 // Alternative: Can be extended to use other APIs (Adzuna, SerpAPI, etc.)
 
+import { jsearchLive, mockJobs } from '@/lib/mock';
+
 const JSEARCH_API_KEY = process.env.JSEARCH_API_KEY;
 const JSEARCH_BASE_URL = 'https://jsearch.p.rapidapi.com';
 
@@ -40,9 +42,9 @@ export async function searchJobs(
   role: string,
   location?: string
 ): Promise<JobSearchResult[]> {
-  if (!JSEARCH_API_KEY) {
-    console.warn('JSEARCH_API_KEY not set, skipping job search');
-    return [];
+  if (!jsearchLive()) {
+    console.warn('JSEARCH_API_KEY not set — returning demo jobs.');
+    return mockJobs(company, role);
   }
 
   try {
@@ -56,7 +58,7 @@ export async function searchJobs(
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'X-RapidAPI-Key': JSEARCH_API_KEY,
+        'X-RapidAPI-Key': JSEARCH_API_KEY as string, // guaranteed by jsearchLive() above
         'X-RapidAPI-Host': 'jsearch.p.rapidapi.com',
       },
     });
