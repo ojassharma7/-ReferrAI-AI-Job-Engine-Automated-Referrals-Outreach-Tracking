@@ -219,6 +219,47 @@ export function mockApplications() {
   ];
 }
 
+// ---- Outreach sequence mocks (no Supabase) ----
+export function mockSequences() {
+  const day = 86_400_000;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const now = Date.now();
+  return [
+    {
+      id: 'mock-seq-1',
+      status: 'active' as const,
+      contact_name: 'Maya Kim',
+      contact_email: 'maya.kim@airbnb.com',
+      contact_title: 'Data Science Manager',
+      company: 'Airbnb',
+      job_title: 'Senior Data Scientist',
+      created_at: iso(now - 2 * day),
+      updated_at: iso(now - 2 * day),
+      steps: [
+        { id: 'm1s1', step_no: 1, send_after_days: 0, subject: 'Quick question about the Senior Data Scientist role', body: 'Hi Maya, ...', status: 'sent' as const, scheduled_for: iso(now - 2 * day), sent_at: iso(now - 2 * day) },
+        { id: 'm1s2', step_no: 2, send_after_days: 3, subject: 'Re: Senior Data Scientist', body: 'Hi Maya, just floating this back up...', status: 'pending' as const, scheduled_for: iso(now + 1 * day), sent_at: null },
+        { id: 'm1s3', step_no: 3, send_after_days: 7, subject: 'Re: Senior Data Scientist', body: 'Last note from me...', status: 'pending' as const, scheduled_for: iso(now + 5 * day), sent_at: null },
+      ],
+    },
+    {
+      id: 'mock-seq-2',
+      status: 'replied' as const,
+      contact_name: 'Liam Garcia',
+      contact_email: 'liam.garcia@notion.so',
+      contact_title: 'Engineering Manager',
+      company: 'Notion',
+      job_title: 'Product Engineer',
+      created_at: iso(now - 6 * day),
+      updated_at: iso(now - 4 * day),
+      steps: [
+        { id: 'm2s1', step_no: 1, send_after_days: 0, subject: 'Quick question about the Product Engineer role', body: 'Hi Liam, ...', status: 'sent' as const, scheduled_for: iso(now - 6 * day), sent_at: iso(now - 6 * day) },
+        { id: 'm2s2', step_no: 2, send_after_days: 3, subject: 'Re: Product Engineer', body: 'Hi Liam, ...', status: 'skipped' as const, scheduled_for: iso(now - 3 * day), sent_at: null },
+        { id: 'm2s3', step_no: 3, send_after_days: 7, subject: 'Re: Product Engineer', body: 'Hi Liam, ...', status: 'skipped' as const, scheduled_for: iso(now + 1 * day), sent_at: null },
+      ],
+    },
+  ];
+}
+
 export function mockReferralEmail(jobTitle: string, company: string, contactName: string) {
   const first = contactName.split(' ')[0] || 'there';
   return {
