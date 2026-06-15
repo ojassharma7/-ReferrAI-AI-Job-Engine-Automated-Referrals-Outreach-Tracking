@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SearchForm } from '@/components/search/SearchForm';
 import { ResultsDashboard } from '@/components/results/ResultsDashboard';
@@ -17,6 +17,15 @@ export function DashboardClient() {
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
   const [candidateProfile, setCandidateProfile] = useState<string>('');
+
+  // Deep-link support (e.g. from the Chrome extension): /dashboard?company=&role=
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const company = params.get('company')?.trim();
+    const role = params.get('role')?.trim();
+    if (company && role) handleSearch({ company, role });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSearch = async (request: SearchRequest) => {
     setIsLoading(true);

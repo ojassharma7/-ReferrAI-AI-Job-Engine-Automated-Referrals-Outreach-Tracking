@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "ReferrAI — Job Capture",
+  "version": "0.1.0",
+  "description": "Capture a job posting from any page and find referral contacts with ReferrAI.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "http://localhost:3210/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ReferrAI — capture this job"
+  }
+}
