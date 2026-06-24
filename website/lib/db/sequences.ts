@@ -12,7 +12,7 @@ import { isSupabaseConfigured } from '@/lib/supabase/config';
 import { mockSequences } from '@/lib/mock';
 import { draftSequence } from '@/lib/outreach/draft';
 import type { SequenceView, SequenceStatus } from '@/lib/outreach/constants';
-import { gmailConfigured, sendGmail, threadHasReply } from '@/lib/email/gmail';
+import { gmailConfigured, sendGmail, threadMessageCount } from '@/lib/email/gmail';
 
 const DAY_MS = 86_400_000;
 
@@ -319,7 +319,15 @@ export async function checkReplies(): Promise<{
     let replied = 0;
     const rows = (active ?? []) as { id: string; thread_id: string }[];
     for (const seq of rows) {
-      if (!(await threadHasReply(seq.thread_id))) continue;
+      // A reply exists when the thread has more messages than the engine sent.
+      const msgCount = await threadMessageCount(seq.thread_id);
+      const { count: sentCount } = await supabase
+        .from('sequence_steps')
+        .select('id', { count: 'exact', head: true })
+        .eq('sequence_id', seq.id)
+        .eq('status', 'sent');
+      if (msgCount <= (sentCount ?? 0)) continue;
+
       await supabase.from('sequences').update({ status: 'replied' }).eq('id', seq.id);
       await supabase
         .from('sequence_steps')

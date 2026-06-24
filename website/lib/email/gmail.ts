@@ -83,21 +83,20 @@ export async function sendGmail(opts: {
   }
 }
 
-// True if the thread contains an inbound message (a reply from the contact).
-// Our own sent messages carry the SENT label; a reply lands without it.
-export async function threadHasReply(threadId: string): Promise<boolean> {
+// Number of messages currently in a Gmail thread. Reply detection compares this
+// to how many steps the engine sent: any extra message is an inbound reply.
+// (More robust than label-checking — handles self-sends and odd labeling.)
+export async function threadMessageCount(threadId: string): Promise<number> {
   const gmail = getGmail();
-  if (!gmail || !threadId) return false;
+  if (!gmail || !threadId) return 0;
   try {
     const res = await gmail.users.threads.get({
       userId: 'me',
       id: threadId,
-      format: 'metadata',
-      metadataHeaders: ['From'],
+      format: 'minimal',
     });
-    const messages = res.data.messages ?? [];
-    return messages.some((m) => !(m.labelIds ?? []).includes('SENT'));
+    return (res.data.messages ?? []).length;
   } catch {
-    return false;
+    return 0;
   }
 }
