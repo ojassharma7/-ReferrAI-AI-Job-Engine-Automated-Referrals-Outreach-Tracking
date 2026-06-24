@@ -1,7 +1,7 @@
-// Job search client using JSearch API (RapidAPI)
-// Alternative: Can be extended to use other APIs (Adzuna, SerpAPI, etc.)
+// Job search client.
+// Provider priority: Adzuna (free, reliable) -> JSearch (RapidAPI) -> demo data.
 
-import { jsearchLive, mockJobs } from '@/lib/mock';
+import { adzunaLive, jsearchLive, mockJobs } from '@/lib/mock';
 
 const JSEARCH_API_KEY = process.env.JSEARCH_API_KEY;
 const JSEARCH_BASE_URL = 'https://jsearch.p.rapidapi.com';
@@ -23,92 +23,136 @@ export interface JobSearchResult {
 
 export interface JobSearchResponse {
   data: JobSearchResult[];
-  parameters: {
-    query: string;
-    page?: number;
-    num_pages?: number;
-  };
+  parameters: { query: string; page?: number; num_pages?: number };
   status: string;
 }
 
 /**
- * Search for jobs using JSearch API
- * @param company Company name
- * @param role Job role/title
- * @param location Optional location filter
+ * Search for jobs. Uses Adzuna when configured, else JSearch, else demo data.
  */
 export async function searchJobs(
   company: string,
   role: string,
-  location?: string
+  location?: string,
 ): Promise<JobSearchResult[]> {
-  if (!jsearchLive()) {
-    console.warn('JSEARCH_API_KEY not set — returning demo jobs.');
-    return mockJobs(company, role);
+  if (adzunaLive()) {
+    const jobs = await searchJobsAdzuna(company, role, location);
+    // If Adzuna returned nothing, fall through to demo so the UI isn't empty.
+    if (jobs.length > 0) return jobs;
   }
 
-  try {
-    // Build query: "Software Engineer at Google" or "Data Scientist Google"
-    const query = location
-      ? `${role} at ${company} in ${location}`
-      : `${role} at ${company}`;
-
-    const url = `${JSEARCH_BASE_URL}/search?query=${encodeURIComponent(query)}&page=1&num_pages=1`;
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-RapidAPI-Key': JSEARCH_API_KEY as string, // guaranteed by jsearchLive() above
-        'X-RapidAPI-Host': 'jsearch.p.rapidapi.com',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`JSearch API error (${response.status}):`, errorText);
-      throw new Error(`Job search failed: ${response.status}`);
-    }
-
-    const data: JobSearchResponse = await response.json();
-
-    if (data.status === 'OK' && data.data) {
-      // Filter results to match the company name (case-insensitive)
-      const companyLower = company.toLowerCase();
-      const filteredJobs = data.data.filter((job) => {
-        const employerName = job.employer_name?.toLowerCase() || '';
-        const jobTitle = job.job_title?.toLowerCase() || '';
-        const description = job.job_description?.toLowerCase() || '';
-
-        return (
-          employerName.includes(companyLower) ||
-          description.includes(companyLower) ||
-          (jobTitle.includes(role.toLowerCase()) &&
-            description.includes(companyLower))
-        );
-      });
-
-      return filteredJobs;
-    }
-
-    return [];
-  } catch (error: any) {
-    console.error('Error searching jobs:', error);
-    // Return empty array on error (graceful degradation)
-    return [];
+  if (jsearchLive()) {
+    const jobs = await searchJobsJSearch(company, role, location);
+    if (jobs.length > 0) return jobs;
   }
+
+  console.warn('No live job provider returned results — returning demo jobs.');
+  return mockJobs(company, role);
 }
 
-/**
- * Alternative: Search using Adzuna API (if JSearch is not available)
- * This is a placeholder for future implementation
- */
+// ---------------------------------------------------------------------------
+// Adzuna (https://developer.adzuna.com/)
+// ---------------------------------------------------------------------------
+function stripHtml(s: string | undefined): string {
+  if (!s) return '';
+  return s
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export async function searchJobsAdzuna(
   company: string,
   role: string,
-  location?: string
+  location?: string,
 ): Promise<JobSearchResult[]> {
-  // TODO: Implement Adzuna API integration
-  // Adzuna API: https://developer.adzuna.com/
-  return [];
+  const appId = process.env.ADZUNA_APP_ID as string;
+  const appKey = process.env.ADZUNA_APP_KEY as string;
+  const country = (process.env.ADZUNA_COUNTRY || 'us').toLowerCase();
+
+  try {
+    const params = new URLSearchParams({
+      app_id: appId,
+      app_key: appKey,
+      results_per_page: '15',
+      what: `${role} ${company}`.trim(),
+      'content-type': 'application/json',
+    });
+    if (location) params.set('where', location);
+
+    const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params.toString()}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error(`Adzuna error (${res.status}):`, (await res.text()).slice(0, 200));
+      return [];
+    }
+    const data = await res.json();
+    const results: any[] = data.results ?? [];
+
+    const jobs: JobSearchResult[] = results.map((r) => ({
+      job_id: String(r.id ?? `adzuna-${Math.random().toString(36).slice(2)}`),
+      employer_name: r.company?.display_name ?? 'Unknown',
+      job_title: stripHtml(r.title),
+      job_description: stripHtml(r.description),
+      job_employment_type:
+        r.contract_time === 'part_time'
+          ? 'Part-time'
+          : r.contract_time === 'full_time'
+            ? 'Full-time'
+            : undefined,
+      job_apply_link: r.redirect_url,
+      job_city: r.location?.display_name,
+      job_country: country.toUpperCase(),
+      job_posted_at_datetime_utc: r.created,
+    }));
+
+    // Soft-prioritize jobs actually at the searched company (don't exclude others).
+    const c = company.toLowerCase();
+    jobs.sort((a, b) => {
+      const am = a.employer_name.toLowerCase().includes(c) ? 0 : 1;
+      const bm = b.employer_name.toLowerCase().includes(c) ? 0 : 1;
+      return am - bm;
+    });
+    return jobs;
+  } catch (err) {
+    console.error('Adzuna search failed:', err instanceof Error ? err.message : err);
+    return [];
+  }
 }
 
+// ---------------------------------------------------------------------------
+// JSearch (RapidAPI) — kept as a fallback provider
+// ---------------------------------------------------------------------------
+async function searchJobsJSearch(
+  company: string,
+  role: string,
+  location?: string,
+): Promise<JobSearchResult[]> {
+  try {
+    const query = location
+      ? `${role} at ${company} in ${location}`
+      : `${role} at ${company}`;
+    const url = `${JSEARCH_BASE_URL}/search?query=${encodeURIComponent(query)}&page=1&num_pages=1`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'X-RapidAPI-Key': JSEARCH_API_KEY as string,
+        'X-RapidAPI-Host': 'jsearch.p.rapidapi.com',
+      },
+    });
+    if (!response.ok) {
+      console.error(`JSearch API error (${response.status})`);
+      return [];
+    }
+    const data: JobSearchResponse = await response.json();
+    return data.status === 'OK' && data.data ? data.data : [];
+  } catch (error) {
+    console.error('JSearch search failed:', error instanceof Error ? error.message : error);
+    return [];
+  }
+}

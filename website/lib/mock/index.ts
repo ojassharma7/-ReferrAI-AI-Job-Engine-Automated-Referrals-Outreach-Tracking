@@ -17,11 +17,13 @@ export function hasLiveKey(value: string | undefined): boolean {
 export const apolloLive = () => hasLiveKey(process.env.APOLLO_API_KEY);
 export const hunterLive = () => hasLiveKey(process.env.HUNTER_API_KEY);
 export const jsearchLive = () => hasLiveKey(process.env.JSEARCH_API_KEY);
+export const adzunaLive = () =>
+  hasLiveKey(process.env.ADZUNA_APP_ID) && hasLiveKey(process.env.ADZUNA_APP_KEY);
 export const geminiLive = () => hasLiveKey(process.env.GEMINI_API_KEY);
 
 // Used by /api/search to flag demo results to the UI.
 export const contactsAreMock = () => !apolloLive() && !hunterLive();
-export const jobsAreMock = () => !jsearchLive();
+export const jobsAreMock = () => !adzunaLive() && !jsearchLive();
 export const generationIsMock = () => !geminiLive();
 
 // ---------------------------------------------------------------------------

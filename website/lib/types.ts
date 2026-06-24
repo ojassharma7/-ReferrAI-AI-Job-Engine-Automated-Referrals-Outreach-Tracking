@@ -48,8 +48,10 @@ export interface SearchResult {
   jobs: Job[];
   totalContacts: number;
   totalJobs: number;
-  // True when any data source returned demo/mock data (missing API key).
+  // True when CONTACTS are demo data (no Apollo/Hunter provider configured).
   isMock?: boolean;
+  // True when JOBS are demo data (JSearch not configured).
+  jobsMock?: boolean;
 }
 
 export interface SearchRequest {

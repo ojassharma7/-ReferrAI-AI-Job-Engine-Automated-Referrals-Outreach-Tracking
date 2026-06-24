@@ -227,7 +227,8 @@ export async function POST(request: NextRequest) {
       jobs: jobs,
       totalContacts: formattedRecruiters.length + formattedDomainEmployees.length,
       totalJobs: jobs.length,
-      isMock: contactsAreMock() || jobsAreMock(),
+      isMock: contactsAreMock(),
+      jobsMock: jobsAreMock(),
     };
 
     console.log('Search completed successfully:', {
