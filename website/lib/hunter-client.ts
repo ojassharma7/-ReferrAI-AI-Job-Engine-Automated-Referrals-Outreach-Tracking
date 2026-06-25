@@ -248,7 +248,19 @@ export async function searchDomainEmployees(
   });
   
   console.log(`✅ Filtered ${contacts.length} contacts → ${filtered.length} matching "${role}"`);
-  
-  // Return ONLY matching contacts - no fallback to random contacts
-  return filtered;
+
+  if (filtered.length > 0) return filtered;
+
+  // Fallback: Hunter's domain-search isn't role-targeted and (especially on the
+  // free tier) returns a small generic sample, so an exact-role filter often
+  // matches nothing. Rather than show zero, surface the real people we DID find
+  // at the company — dropping only obvious noise — so the user always gets
+  // usable, real contacts to reach out to.
+  const noise = ['administrative assistant', 'executive assistant', 'assistant to'];
+  const general = contacts.filter((c) => {
+    const t = (c.title || '').toLowerCase().trim();
+    return !!t && !noise.some((n) => t.includes(n));
+  });
+  console.log(`↩️  No exact-role match for "${role}"; returning ${general.length} general domain contacts`);
+  return general.slice(0, 8);
 }

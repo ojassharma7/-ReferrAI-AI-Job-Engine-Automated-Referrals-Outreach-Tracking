@@ -196,6 +196,11 @@ export function ResultsDashboard({ results, candidateProfile }: ResultsDashboard
         </TabsContent>
 
         <TabsContent value="jobs" className="space-y-4">
+          {results.jobsMock && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Demo job listings — add <code className="rounded bg-amber-100 px-1">JSEARCH_API_KEY</code> (RapidAPI) in <code className="rounded bg-amber-100 px-1">website/.env.local</code> for live postings.
+            </div>
+          )}
           {results.jobs.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
