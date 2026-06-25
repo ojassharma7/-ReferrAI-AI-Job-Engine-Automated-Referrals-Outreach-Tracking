@@ -1,7 +1,7 @@
 // API Route: Search for contacts and jobs
 
 import { NextRequest, NextResponse } from 'next/server';
-import { searchRecruiters as apolloSearchRecruiters, searchDomainEmployees as apolloSearchDomainEmployees, lookupCompany } from '@/lib/apollo-client';
+import { lookupCompany } from '@/lib/apollo-client';
 import { searchRecruiters as hunterSearchRecruiters, searchDomainEmployees as hunterSearchDomainEmployees } from '@/lib/hunter-client';
 import { searchJobs } from '@/lib/job-search-client';
 import { SearchResult, Job } from '@/lib/types';
@@ -52,94 +52,42 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    // 2. Try to search for contacts
+    // 2. Discover contacts via Hunter. Passing the company NAME lets Hunter
+    //    resolve the real domain (e.g. "Zest AI" -> zest.ai), and the department
+    //    filter (mapped from the role) returns people in the searched role.
     let recruiters: any[] = [];
     let domainEmployees: any[] = [];
-    
     const domain = companyData.domain || extractDomain(company);
-    console.log(`Starting contact search for company: ${company}, role: ${role}, domain: ${domain}`);
-    console.log(`APOLLO_API_KEY present: ${!!process.env.APOLLO_API_KEY}`);
-    console.log(`HUNTER_API_KEY present: ${!!process.env.HUNTER_API_KEY}`);
-    
-    // Try Apollo.io first, fallback to Hunter.io
-    let usingApollo = false;
-    try {
-      console.log('Attempting Apollo.io search...');
-      recruiters = await apolloSearchRecruiters(company);
-      domainEmployees = await apolloSearchDomainEmployees(company, role);
-      usingApollo = true;
-      console.log(`Apollo.io: Found ${recruiters.length} recruiters and ${domainEmployees.length} domain employees`);
-      
-      // If Apollo returned very few results, try Hunter.io as supplement
-      if ((recruiters.length + domainEmployees.length) < 3 && domain && process.env.HUNTER_API_KEY) {
-        console.log('Apollo.io returned few results, supplementing with Hunter.io...');
-        try {
-          const hunterRecruiters = await hunterSearchRecruiters(domain);
-          const hunterEmployees = await hunterSearchDomainEmployees(domain, role);
-          
-          // Merge results (avoid duplicates by email)
-          const existingEmails = new Set([
-            ...recruiters.map(r => r.email?.toLowerCase()),
-            ...domainEmployees.map(e => e.email?.toLowerCase()),
-          ]);
-          
-          const newRecruiters = hunterRecruiters.filter(r => 
-            r.email && !existingEmails.has(r.email.toLowerCase())
-          );
-          const newEmployees = hunterEmployees.filter(e => 
-            e.email && !existingEmails.has(e.email.toLowerCase())
-          );
-          
-          recruiters = [...recruiters, ...newRecruiters];
-          domainEmployees = [...domainEmployees, ...newEmployees];
-          console.log(`After Hunter.io supplement: ${recruiters.length} recruiters and ${domainEmployees.length} domain employees`);
-        } catch (hunterError: any) {
-          console.warn('Hunter.io supplement failed:', hunterError.message);
-        }
-      }
-    } catch (apolloError: any) {
-      console.warn('Apollo.io search failed:', apolloError.message);
-      
-      // Check if it's an authentication error
-      if (apolloError.message.includes('401') || apolloError.message.includes('Invalid access credentials')) {
-        console.warn('⚠️ Apollo.io API key appears invalid. Check your APOLLO_API_KEY in .env.local');
-        console.warn('Falling back to Hunter.io...');
-      }
-      
-      // Always try Hunter.io fallback if Apollo fails
-      if (domain && process.env.HUNTER_API_KEY) {
-        try {
-          console.log('🔄 Falling back to Hunter.io...');
-          recruiters = await hunterSearchRecruiters(domain);
-          domainEmployees = await hunterSearchDomainEmployees(domain, role);
-          console.log(`✅ Hunter.io: Found ${recruiters.length} recruiters and ${domainEmployees.length} domain employees`);
-        } catch (hunterError: any) {
-          console.error('❌ Hunter.io also failed:', hunterError.message);
-          // Don't throw - return empty arrays so user still sees company info
-          recruiters = [];
-          domainEmployees = [];
-        }
-      } else {
-        // No fallback available
-        console.warn('⚠️ No Hunter.io API key set. Cannot fallback from Apollo.io.');
-        recruiters = [];
-        domainEmployees = [];
+
+    if (process.env.HUNTER_API_KEY) {
+      try {
+        [recruiters, domainEmployees] = await Promise.all([
+          hunterSearchRecruiters(company, domain),
+          hunterSearchDomainEmployees(company, role, domain),
+        ]);
+        console.log(`Hunter: ${recruiters.length} recruiters, ${domainEmployees.length} employees`);
+      } catch (e: any) {
+        console.warn('Hunter search failed:', e.message);
       }
     }
 
-    // 3b. Last-resort demo data: only when NO contact provider is configured.
-    // (If only one of Apollo/Hunter is live, the live one is used above.)
+    // Last-resort demo data only when no contact provider is configured.
     if (contactsAreMock()) {
-      console.log('No contact provider configured — returning demo contacts.');
       recruiters = mockRecruiters(company);
       domainEmployees = mockDomainEmployees(company, role);
     }
+
+    // The real domain is whatever Hunter resolved (from the contact emails).
+    const resolvedDomain =
+      [...recruiters, ...domainEmployees]
+        .map((c) => c.email?.split('@')[1])
+        .find((d: string | undefined) => d && !d.includes('mock')) || domain;
 
     // 4. Format company data
     const companyResult = {
       id: companyData.id || `company-${Date.now()}`,
       name: companyData.name || company,
-      domain: companyData.primary_domain || companyData.domain || companyData.website_url || extractDomain(company),
+      domain: resolvedDomain || companyData.primary_domain || companyData.domain || extractDomain(company),
       industry: companyData.industry,
       size: companyData.estimated_num_employees || companyData.size,
       location: companyData.primary_location?.city || companyData.location,
@@ -191,11 +139,11 @@ export async function POST(request: NextRequest) {
 
     const formattedRecruiters = recruiters
       .filter(contact => contact.email || contact.full_name || contact.name) // Only include contacts with at least email or name
-      .map(contact => formatContact(contact, usingApollo ? 'apollo' : 'hunter'));
+      .map(contact => formatContact(contact, 'hunter'));
     
     const formattedDomainEmployees = domainEmployees
       .filter(contact => contact.email || contact.full_name || contact.name) // Only include contacts with at least email or name
-      .map(contact => formatContact(contact, usingApollo ? 'apollo' : 'hunter'));
+      .map(contact => formatContact(contact, 'hunter'));
 
     // 6. Search for jobs
     let jobs: Job[] = [];
