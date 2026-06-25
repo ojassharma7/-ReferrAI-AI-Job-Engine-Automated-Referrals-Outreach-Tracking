@@ -1,4 +1,11 @@
-// Hunter.io API Client (Fallback/Alternative to Apollo.io)
+// Hunter.io contact discovery — role-aware.
+//
+// Two Hunter features make results relevant instead of a generic exec sample:
+//  - `company`: Hunter resolves the real domain from a company NAME, so we don't
+//    have to guess it (e.g. "Zest AI" -> zest.ai, not zestai.com).
+//  - `department`: filters to the relevant team (it/hr/sales/...), so a
+//    "Data Scientist" search returns engineers/data scientists, not the COO.
+// Results are then sorted by how well each title matches the searched role.
 
 const HUNTER_API_KEY = process.env.HUNTER_API_KEY;
 const HUNTER_BASE_URL = 'https://api.hunter.io/v2';
@@ -13,254 +20,144 @@ export interface HunterContact {
   phone?: string;
   verified: boolean;
   confidence_score: number;
+  department?: string;
   source?: string;
 }
 
-export interface HunterSearchResponse {
-  contacts: HunterContact[];
-  total: number;
+// Map a free-text role to a Hunter department bucket.
+// Departments Hunter supports: executive, it, finance, management, sales,
+// legal, support, hr, marketing, communication, operations.
+function departmentForRole(role: string): string | undefined {
+  const r = role.toLowerCase();
+  const has = (...k: string[]) => k.some((x) => r.includes(x));
+  if (has('recruit', 'talent', 'sourcer', 'people ops', ' hr', 'human resource')) return 'hr';
+  if (
+    has(
+      'data scien', 'machine learning', 'ml', ' ai', 'engineer', 'developer',
+      'software', 'devops', 'sre', 'architect', 'programmer', 'scientist',
+      'analyst', 'data', 'security', 'qa', 'sde', 'designer', 'ux', 'ui', 'technical',
+    )
+  )
+    return 'it';
+  if (has('product manager', 'product owner', 'program manager')) return 'management';
+  if (has('market', 'growth', 'brand', 'content', 'seo', 'demand gen')) return 'marketing';
+  if (has('sales', 'account exec', 'business development', 'bdr', 'sdr', 'revenue', 'partnership'))
+    return 'sales';
+  if (has('finance', 'account', 'controller', 'fp&a')) return 'finance';
+  if (has('legal', 'counsel', 'compliance')) return 'legal';
+  if (has('support', 'customer success', 'customer experience')) return 'support';
+  if (has('operations', ' ops')) return 'operations';
+  return undefined; // unknown role -> no department filter (return all, then sort)
 }
 
-/**
- * Search for contacts using Hunter.io domain-search
- */
-export async function searchContactsByDomain(
-  domain: string,
-  department?: string
-): Promise<HunterContact[]> {
-  if (!HUNTER_API_KEY) {
-    throw new Error('HUNTER_API_KEY is not set');
-  }
+function mapEmail(e: any): HunterContact {
+  const first = e.first_name || '';
+  const last = e.last_name || '';
+  return {
+    email: e.value || e.email || '',
+    first_name: first,
+    last_name: last,
+    full_name:
+      first && last ? `${first} ${last}` : first || last || (e.value?.split('@')[0] ?? 'Unknown'),
+    title: e.position || e.title || '',
+    linkedin_url: e.linkedin || e.linkedin_url || undefined,
+    phone: e.phone_number || e.phone || undefined,
+    verified: e.verification?.status === 'valid' || e.verified === true,
+    confidence_score: e.confidence ?? e.confidence_score ?? 0,
+    department: e.department || undefined,
+    source: 'hunter',
+  };
+}
+
+interface FetchOpts {
+  company?: string;
+  domain?: string;
+  department?: string;
+  limit?: number;
+}
+
+async function fetchContacts(opts: FetchOpts): Promise<HunterContact[]> {
+  if (!HUNTER_API_KEY) throw new Error('HUNTER_API_KEY is not set');
+  if (!opts.company && !opts.domain) return [];
 
   const params = new URLSearchParams({
-    domain: domain,
     api_key: HUNTER_API_KEY,
-    limit: '10', // Free tier limit is 10 - use exactly 10 to avoid errors
+    limit: String(opts.limit ?? 10),
   });
+  // Prefer the company NAME (Hunter resolves the domain); fall back to a domain.
+  if (opts.company) params.set('company', opts.company);
+  else if (opts.domain) params.set('domain', opts.domain);
+  if (opts.department) params.set('department', opts.department);
 
-  if (department) {
-    params.append('department', department);
-  }
-
-  const url = `${HUNTER_BASE_URL}/domain-search?${params.toString()}`;
-
+  const res = await fetch(`${HUNTER_BASE_URL}/domain-search?${params.toString()}`);
+  const text = await res.text();
+  let json: any;
   try {
-    const response = await fetch(url);
-    const responseText = await response.text();
-    
-    if (!response.ok) {
-      // Try to parse the response - it might contain partial data even with errors
-      let responseData: any = {};
-      try {
-        responseData = JSON.parse(responseText);
-      } catch (e) {
-        // Not JSON, can't parse
-        throw new Error(`Hunter.io API error (${response.status}): ${responseText}`);
-      }
-      
-      // Check if it's just a pagination limit warning (we can still use the results)
-      const isLimitError = responseData.errors?.some((e: any) => 
-        (e.code === 400) && 
-        (e.details?.includes('limited to') || e.details?.includes('limited to 10'))
-      );
-      
-      if (isLimitError && responseData.data?.emails && responseData.data.emails.length > 0) {
-        // Return what we have despite the limit warning
-        console.log(`⚠️ Hunter.io free tier limit reached, but returning ${responseData.data.emails.length} contacts`);
-        const contacts: HunterContact[] = (responseData.data.emails || []).map((email: any) => ({
-          email: email.value || email.email || '',
-          first_name: email.first_name || '',
-          last_name: email.last_name || '',
-          full_name: email.first_name && email.last_name 
-            ? `${email.first_name} ${email.last_name}` 
-            : email.first_name || email.last_name || email.value?.split('@')[0] || 'Unknown',
-          title: email.position || email.title || '',
-          linkedin_url: email.linkedin || email.linkedin_url || undefined,
-          phone: email.phone || email.phone_number || undefined,
-          verified: email.verification?.status === 'valid' || email.verified === true,
-          confidence_score: email.confidence || email.confidence_score || 0,
-          source: 'hunter',
-        }));
-        return contacts;
-      }
-      
-      const error = JSON.stringify(responseData);
-      throw new Error(`Hunter.io API error (${response.status}): ${error}`);
-    }
-
-    const data = JSON.parse(responseText);
-
-    // Format Hunter.io response to our contact format
-    const contacts: HunterContact[] = (data.data?.emails || []).map((email: any) => ({
-      email: email.value || email.email || '',
-      first_name: email.first_name || '',
-      last_name: email.last_name || '',
-      full_name: email.first_name && email.last_name 
-        ? `${email.first_name} ${email.last_name}` 
-        : email.first_name || email.last_name || email.value?.split('@')[0] || 'Unknown',
-      title: email.position || email.title || '',
-      linkedin_url: email.linkedin || email.linkedin_url || undefined,
-      phone: email.phone || email.phone_number || undefined,
-      verified: email.verification?.status === 'valid' || email.verified === true,
-      confidence_score: email.confidence || email.confidence_score || 0,
-      source: 'hunter',
-    }));
-
-    return contacts;
-  } catch (error: any) {
-    console.error('Hunter.io API error:', error);
-    throw new Error(`Failed to search contacts: ${error.message}`);
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(`Hunter.io API error (${res.status})`);
   }
+  // Free tier returns partial data alongside a 400 pagination warning — still usable.
+  const emails: any[] = json?.data?.emails ?? [];
+  return emails.map(mapEmail);
 }
 
-/**
- * Search for recruiters at a company
- */
-export async function searchRecruiters(domain: string): Promise<HunterContact[]> {
-  const contacts = await searchContactsByDomain(domain);
-  
-  if (contacts.length === 0) return [];
-  
-  // Filter for recruiter titles - strict matching
-  const recruiterKeywords = ['recruiter', 'talent acquisition', 'hiring manager', 'hr partner', 'people operations'];
-  const filtered = contacts.filter(contact => {
-    const titleLower = (contact.title || '').toLowerCase();
-    return recruiterKeywords.some(keyword => titleLower.includes(keyword));
+// How well a title matches the searched role (higher = more relevant).
+function relevance(title: string, role: string): number {
+  const t = (title || '').toLowerCase().trim();
+  const r = role.toLowerCase().trim();
+  if (!t) return 0;
+  if (t.includes(r)) return 100; // exact role phrase
+  const tokens = r.split(/\s+/).filter((x) => x.length > 2);
+  const hits = tokens.filter((tok) => t.includes(tok)).length;
+  if (hits) return 40 + hits * 15;
+  return 10;
+}
+
+const NOISE = ['administrative assistant', 'executive assistant', 'assistant to', 'intern'];
+
+function dropNoise(contacts: HunterContact[]): HunterContact[] {
+  return contacts.filter((c) => {
+    const t = (c.title || '').toLowerCase().trim();
+    return !!t && !NOISE.some((n) => t.includes(n));
   });
-  
-  return filtered;
 }
 
 /**
- * Search for domain-specific employees - STRICT FILTERING
+ * People at the company in (or near) the searched role.
+ * `company` is the name (Hunter resolves the domain); `domain` is an optional hint.
  */
 export async function searchDomainEmployees(
-  domain: string,
-  role: string
+  company: string,
+  role: string,
+  domain?: string,
 ): Promise<HunterContact[]> {
-  const contacts = await searchContactsByDomain(domain);
-  
-  if (contacts.length === 0) {
-    console.log(`No contacts found for domain "${domain}"`);
-    return [];
+  const department = departmentForRole(role);
+
+  let contacts = await fetchContacts({ company, domain, department, limit: 10 });
+  // If the department filter returned nothing, retry broader (no department).
+  if (contacts.length === 0 && department) {
+    contacts = await fetchContacts({ company, domain, limit: 10 });
   }
-  
-  const roleLower = role.toLowerCase().trim();
-  
-  // STRICT role-specific keywords - only exact/close matches
-  const roleKeywords: Record<string, string[]> = {
-    'data scientist': [
-      'data scientist', 'data science', 'ml engineer', 'machine learning engineer', 
-      'machine learning', 'ai engineer', 'research scientist', 'applied scientist',
-      'statistician', 'quantitative analyst', 'data science engineer'
-    ],
-    'software engineer': [
-      'software engineer', 'software developer', 'backend engineer', 'frontend engineer',
-      'full stack engineer', 'fullstack engineer', 'sde', 'software development engineer',
-      'systems engineer', 'application engineer', 'platform engineer', 'devops engineer',
-      'site reliability engineer', 'sre'
-    ],
-    'product manager': [
-      'product manager', 'product owner', 'technical product manager', 'product lead'
-    ],
-    'data analyst': [
-      'data analyst', 'business analyst', 'data analytics', 'analytics engineer'
-    ],
-  };
-  
-  // Get relevant keywords - if role not found, use role itself
-  const relevantKeywords = roleKeywords[roleLower] || [roleLower];
-  
-  // Always exclude these - never return them
-  const alwaysExclude = [
-    'recruiter', 'talent acquisition', 'hiring', 'hr partner', 'hr manager', 
-    'people operations', 'administrative assistant', 'executive assistant',
-    'executive recruiter', 'headhunter', 'sourcer', 'executive', 'head of',
-    'director of', 'manager of', 'operations support', 'business operations'
-  ];
-  
-  // STRICT filtering - only return contacts that clearly match
-  const filtered = contacts.filter(contact => {
-    const titleLower = (contact.title || '').toLowerCase().trim();
-    
-    if (!titleLower) return false;
-    
-    // Always skip excluded roles - be very strict
-    if (alwaysExclude.some(excluded => titleLower.includes(excluded))) {
-      return false;
-    }
-    
-    // Skip generic titles without role keywords (e.g., just "Manager", "Director", "Head")
-    const genericOnly = ['director', 'manager', 'executive', 'head', 'lead', 'senior', 'principal'];
-    const isGenericOnly = genericOnly.some(gt => {
-      // Match patterns like "Head", "Director", "Manager" without role keywords
-      const pattern = new RegExp(`^${gt}(\\s+of|\\s+$|$)`, 'i');
-      if (pattern.test(titleLower)) {
-        // Only exclude if it doesn't contain any relevant keywords
-        return !relevantKeywords.some(kw => titleLower.includes(kw));
-      }
-      return false;
-    });
-    if (isGenericOnly) {
-      return false;
-    }
-    
-    // Additional check: if title is just "Head", "Executive", "Director" without context, exclude
-    if (['head', 'executive', 'director'].includes(titleLower) || 
-        titleLower.startsWith('head of') || 
-        titleLower.startsWith('executive ') && !relevantKeywords.some(kw => titleLower.includes(kw))) {
-      return false;
-    }
-    
-    // Must match one of the relevant keywords
-    const matchesRole = relevantKeywords.some(keyword => {
-      // Exact match or contains the keyword
-      return titleLower.includes(keyword);
-    });
-    
-    if (!matchesRole) return false;
-    
-    // For technical roles, exclude non-technical even if keyword matches
-    const isTechnicalSearch = roleLower.includes('engineer') || roleLower.includes('scientist') || 
-                               roleLower.includes('developer') || roleLower.includes('analyst');
-    
-    if (isTechnicalSearch) {
-      const nonTechnicalKeywords = [
-        'sales', 'marketing', 'finance', 'operations', 'business development',
-        'account manager', 'customer success', 'business operations', 'strategy',
-        'risk manager', 'support executive'
-      ];
-      
-      const hasNonTechnical = nonTechnicalKeywords.some(nt => titleLower.includes(nt));
-      if (hasNonTechnical) {
-        // Only allow if clearly technical (e.g., "Sales Engineer" is OK)
-        const hasTechnicalKeyword = titleLower.includes('engineer') || 
-                                    titleLower.includes('scientist') || 
-                                    titleLower.includes('developer') ||
-                                    titleLower.includes('analyst');
-        if (!hasTechnicalKeyword) {
-          return false;
-        }
-      }
-    }
-    
-    return true;
-  });
-  
-  console.log(`✅ Filtered ${contacts.length} contacts → ${filtered.length} matching "${role}"`);
 
-  if (filtered.length > 0) return filtered;
+  contacts = dropNoise(contacts);
+  contacts.sort((a, b) => relevance(b.title, role) - relevance(a.title, role));
+  return contacts.slice(0, 12);
+}
 
-  // Fallback: Hunter's domain-search isn't role-targeted and (especially on the
-  // free tier) returns a small generic sample, so an exact-role filter often
-  // matches nothing. Rather than show zero, surface the real people we DID find
-  // at the company — dropping only obvious noise — so the user always gets
-  // usable, real contacts to reach out to.
-  const noise = ['administrative assistant', 'executive assistant', 'assistant to'];
-  const general = contacts.filter((c) => {
-    const t = (c.title || '').toLowerCase().trim();
-    return !!t && !noise.some((n) => t.includes(n));
-  });
-  console.log(`↩️  No exact-role match for "${role}"; returning ${general.length} general domain contacts`);
-  return general.slice(0, 8);
+/**
+ * Recruiters / talent / HR at the company (people who can route a referral).
+ */
+export async function searchRecruiters(
+  company: string,
+  domain?: string,
+): Promise<HunterContact[]> {
+  const contacts = dropNoise(await fetchContacts({ company, domain, department: 'hr', limit: 25 }));
+
+  const recruiterKw = ['recruit', 'talent', 'hiring', 'sourc', 'people'];
+  const recruiters = contacts.filter((c) =>
+    recruiterKw.some((k) => (c.title || '').toLowerCase().includes(k)),
+  );
+  // Prefer explicit recruiters; otherwise the HR team can still route a referral.
+  return (recruiters.length ? recruiters : contacts).slice(0, 8);
 }

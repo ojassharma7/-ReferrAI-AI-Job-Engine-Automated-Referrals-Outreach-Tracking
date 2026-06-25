@@ -152,10 +152,25 @@ export function ResultsDashboard({ results, candidateProfile }: ResultsDashboard
         </TabsList>
 
         <TabsContent value="recruiters" className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">
+              Recruiters &amp; talent/HR who can route a referral.
+            </span>
+            <a
+              href={`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(
+                `recruiter ${company}`,
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 text-sm font-medium text-blue-600 hover:underline"
+            >
+              Find {company} recruiters on LinkedIn →
+            </a>
+          </div>
           {results.recruiters.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
-                No recruiters found for this company.
+                No recruiters found in Hunter for this company — try the LinkedIn link above.
               </CardContent>
             </Card>
           ) : (
@@ -196,11 +211,23 @@ export function ResultsDashboard({ results, candidateProfile }: ResultsDashboard
         </TabsContent>
 
         <TabsContent value="jobs" className="space-y-4">
-          {results.jobsMock && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Demo job listings — add <code className="rounded bg-amber-100 px-1">JSEARCH_API_KEY</code> (RapidAPI) in <code className="rounded bg-amber-100 px-1">website/.env.local</code> for live postings.
-            </div>
-          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">
+              {results.jobsMock
+                ? 'Showing demo jobs — add ADZUNA_APP_ID / ADZUNA_APP_KEY for live postings.'
+                : 'Live openings via Adzuna — coverage varies by company, so also check LinkedIn for the full list.'}
+            </span>
+            <a
+              href={`https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(
+                `${jobTitle ? jobTitle + ' ' : ''}${company}`.trim(),
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 text-sm font-medium text-blue-600 hover:underline"
+            >
+              See all {company} openings on LinkedIn →
+            </a>
+          </div>
           {results.jobs.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
