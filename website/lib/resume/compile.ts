@@ -23,6 +23,12 @@ const ENGINES = process.env.LATEX_ENGINE
 
 const TIMEOUT_MS = Number(process.env.LATEX_TIMEOUT_MS ?? 30_000);
 
+// Remote LaTeX HTTP API (YtoTech latex-on-http format), used when no local TeX
+// engine exists — e.g. on Vercel/serverless. Set LATEX_COMPILE_URL=off to
+// disable and degrade to tex-only.
+const REMOTE_URL = process.env.LATEX_COMPILE_URL || 'https://latex.ytotech.com/builds/sync';
+const REMOTE_TIMEOUT_MS = Number(process.env.LATEX_REMOTE_TIMEOUT_MS ?? 60_000);
+
 interface RunOutput {
   code: number | null;
   out: string;
@@ -93,15 +99,46 @@ export async function compileLatex(tex: string): Promise<CompileResult> {
       }
     }
 
-    // No engine was found at all.
+    // No local engine — fall back to the remote LaTeX service (serverless).
+    void lastLog;
+    return await compileLatexRemote(tex);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// Compile via a remote LaTeX HTTP API. POSTs the .tex and gets a PDF back.
+async function compileLatexRemote(tex: string): Promise<CompileResult> {
+  if (REMOTE_URL.toLowerCase() === 'off') {
     return {
       pdf: null,
       available: false,
       engine: null,
-      log: lastLog || 'No LaTeX engine found (pdflatex/xelatex/lualatex).',
+      log: 'No local TeX engine and remote compile is disabled (LATEX_COMPILE_URL=off).',
     };
-  } finally {
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+  try {
+    const res = await fetch(REMOTE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        compiler: 'pdflatex',
+        resources: [{ main: true, content: tex }],
+      }),
+      signal: AbortSignal.timeout(REMOTE_TIMEOUT_MS),
+    });
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (res.ok && buf.subarray(0, 5).toString('latin1') === '%PDF-') {
+      return { pdf: buf, available: true, engine: 'remote', log: '' };
+    }
+    return { pdf: null, available: true, engine: 'remote', log: tailLog(buf.toString('utf8')) };
+  } catch (err) {
+    return {
+      pdf: null,
+      available: false,
+      engine: null,
+      log: `Remote LaTeX compile failed: ${err instanceof Error ? err.message : 'error'}`,
+    };
   }
 }
 
