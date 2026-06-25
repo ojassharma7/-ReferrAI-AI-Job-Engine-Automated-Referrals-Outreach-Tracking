@@ -8,9 +8,9 @@ import {
 } from '@/lib/mock';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-// NOTE: the legacy "gemini-pro" id is deprecated. Default to a current model;
-// override with GEMINI_MODEL (e.g. gemini-1.5-pro, gemini-2.0-flash).
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+// NOTE: gemini-pro AND gemini-2.0-flash are both retired by 2026. Default to a
+// current model; override with GEMINI_MODEL (e.g. gemini-3.5-flash, 2.5-pro).
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 
 export interface GeminiResponse {
   text: string;
