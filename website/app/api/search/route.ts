@@ -216,28 +216,26 @@ function inferSeniority(title: string): 'IC' | 'Lead' | 'Manager' | 'Director' |
 }
 
 function calculateRelevanceScore(title: string, role: string): number {
-  if (!title) return 50;
-  
-  const titleLower = title.toLowerCase();
-  const roleLower = role.toLowerCase();
-  
-  // Exact match = 100
-  if (titleLower.includes(roleLower)) return 100;
-  
-  // Related roles = 70-90
-  const relatedRoles: Record<string, string[]> = {
-    'data scientist': ['ml engineer', 'machine learning', 'data science'],
-    'software engineer': ['developer', 'programmer', 'engineer'],
+  const t = (title || '').toLowerCase().trim();
+  const r = (role || '').toLowerCase().trim();
+  if (!t) return 0;
+  if (t.includes(r)) return 100; // exact role phrase in the title
+
+  // Prefix token match so "Data Science" scores high for a "Data Scientist" search.
+  const tokens = r.split(/\s+/).filter((x) => x.length > 2);
+  const hits = tokens.filter((tok) => t.includes(tok.slice(0, 5))).length;
+  if (tokens.length && hits === tokens.length) return 90;
+  if (hits) return 62 + (hits - 1) * 12;
+
+  // Adjacent role families.
+  const related: Record<string, string[]> = {
+    'data scientist': ['machine learning', 'ml ', 'applied scien', 'research scien', 'analytics'],
+    'software engineer': ['developer', 'programmer', 'swe', 'full stack', 'backend', 'frontend'],
+    'product manager': ['product owner', 'product lead'],
   };
-  
-  const related = relatedRoles[roleLower];
-  if (related) {
-    const match = related.find(r => titleLower.includes(r));
-    if (match) return 80;
-  }
-  
-  // Default
-  return 50;
+  const fam = related[r];
+  if (fam && fam.some((k) => t.includes(k))) return 78;
+  return 45;
 }
 
 function extractDomain(companyName: string): string | null {

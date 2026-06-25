@@ -103,14 +103,17 @@ async function fetchContacts(opts: FetchOpts): Promise<HunterContact[]> {
 }
 
 // How well a title matches the searched role (higher = more relevant).
+// Prefix matching so "Data Science" counts for a "Data Scientist" search.
 function relevance(title: string, role: string): number {
   const t = (title || '').toLowerCase().trim();
   const r = role.toLowerCase().trim();
   if (!t) return 0;
   if (t.includes(r)) return 100; // exact role phrase
   const tokens = r.split(/\s+/).filter((x) => x.length > 2);
-  const hits = tokens.filter((tok) => t.includes(tok)).length;
-  if (hits) return 40 + hits * 15;
+  if (!tokens.length) return 50;
+  const hits = tokens.filter((tok) => t.includes(tok.slice(0, 5))).length;
+  if (hits === tokens.length) return 90; // all role words present
+  if (hits) return 55 + (hits - 1) * 15;
   return 10;
 }
 
@@ -140,9 +143,16 @@ export async function searchDomainEmployees(
     contacts = await fetchContacts({ company, domain, limit: 10 });
   }
 
-  contacts = dropNoise(contacts);
-  contacts.sort((a, b) => relevance(b.title, role) - relevance(a.title, role));
-  return contacts.slice(0, 12);
+  const scored = dropNoise(contacts)
+    .map((c) => ({ c, score: relevance(c.title, role) }))
+    .sort((a, b) => b.score - a.score);
+
+  // Precision: when genuine role matches exist, show ONLY those (e.g. just the
+  // data scientists, not the DevOps/Systems folks). Otherwise fall back to the
+  // whole department so the user still gets real people to reach out to.
+  const relevant = scored.filter((x) => x.score >= 55);
+  const chosen = relevant.length ? relevant : scored;
+  return chosen.map((x) => x.c).slice(0, 12);
 }
 
 /**
