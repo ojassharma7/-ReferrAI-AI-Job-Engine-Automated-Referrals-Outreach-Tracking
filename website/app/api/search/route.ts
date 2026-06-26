@@ -9,6 +9,8 @@ import { getAppUser } from '@/lib/auth';
 import { persistSearchResult } from '@/lib/db/persist';
 import { enforceLimit, recordUsage } from '@/lib/usage';
 import { contactsAreMock, jobsAreMock, mockRecruiters, mockDomainEmployees } from '@/lib/mock';
+import { resolveCompany } from '@/lib/company/resolve';
+import { roleScore } from '@/lib/roles';
 
 export async function POST(request: NextRequest) {
   console.log('🚀 /api/search endpoint called');
@@ -38,32 +40,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Try Apollo.io lookup
+    // 0. Resolve the (possibly misspelled / informal) name to a canonical company
+    //    name + domain. The domain makes Hunter reliable and builds the ATS slug.
+    const resolved = await resolveCompany(company);
+    const companyName = resolved?.name || company;
+    const clearbitDomain = resolved?.domain;
+
+    // 1. Company display data (best-effort; mock when Apollo isn't live).
     let companyData: any = null;
     try {
-      companyData = await lookupCompany(company);
-    } catch (error: any) {
-      console.warn('Apollo.io company lookup failed:', error.message);
-      // Create fallback company data
-      companyData = {
-        id: `company-${Date.now()}`,
-        name: company,
-        domain: extractDomain(company),
-      };
+      companyData = await lookupCompany(companyName);
+    } catch {
+      companyData = { id: `company-${Date.now()}`, name: companyName, domain: clearbitDomain };
     }
 
-    // 2. Discover contacts via Hunter. Passing the company NAME lets Hunter
-    //    resolve the real domain (e.g. "Zest AI" -> zest.ai), and the department
-    //    filter (mapped from the role) returns people in the searched role.
+    // 2. Discover contacts via Hunter, using the canonical domain when we have it
+    //    (reliable) and the role->department filter for relevance.
     let recruiters: any[] = [];
     let domainEmployees: any[] = [];
-    const domain = companyData.domain || extractDomain(company);
+    const domain = clearbitDomain || companyData.domain || extractDomain(companyName);
 
     if (process.env.HUNTER_API_KEY) {
       try {
         [recruiters, domainEmployees] = await Promise.all([
-          hunterSearchRecruiters(company, domain),
-          hunterSearchDomainEmployees(company, role, domain),
+          hunterSearchRecruiters(companyName, domain),
+          hunterSearchDomainEmployees(companyName, role, domain),
         ]);
         console.log(`Hunter: ${recruiters.length} recruiters, ${domainEmployees.length} employees`);
       } catch (e: any) {
@@ -73,8 +74,8 @@ export async function POST(request: NextRequest) {
 
     // Last-resort demo data only when no contact provider is configured.
     if (contactsAreMock()) {
-      recruiters = mockRecruiters(company);
-      domainEmployees = mockDomainEmployees(company, role);
+      recruiters = mockRecruiters(companyName);
+      domainEmployees = mockDomainEmployees(companyName, role);
     }
 
     // The real domain is whatever Hunter resolved (from the contact emails).
@@ -86,8 +87,8 @@ export async function POST(request: NextRequest) {
     // 4. Format company data
     const companyResult = {
       id: companyData.id || `company-${Date.now()}`,
-      name: companyData.name || company,
-      domain: resolvedDomain || companyData.primary_domain || companyData.domain || extractDomain(company),
+      name: companyName,
+      domain: resolvedDomain || clearbitDomain || companyData.primary_domain || companyData.domain || extractDomain(companyName),
       industry: companyData.industry,
       size: companyData.estimated_num_employees || companyData.size,
       location: companyData.primary_location?.city || companyData.location,
@@ -132,7 +133,7 @@ export async function POST(request: NextRequest) {
         phone: contact.phone_number || contact.phone || contact.phone_numbers?.[0] || '',
         email_verified: isVerified,
         email_status: emailStatus as 'verified' | 'likely' | 'guessed' | 'invalid' | 'unknown',
-        relevance_score: calculateRelevanceScore(title, role),
+        relevance_score: roleScore(title, role),
         source: contact.source || source,
       };
     };
@@ -148,7 +149,7 @@ export async function POST(request: NextRequest) {
     // 6. Search for jobs
     let jobs: Job[] = [];
     try {
-      const jobResults = await searchJobs(company, role, companyResult.location || undefined);
+      const jobResults = await searchJobs(companyName, role, companyResult.location || undefined, domain);
       jobs = jobResults.map((job) => ({
         id: job.job_id || `job-${Date.now()}-${Math.random()}`,
         company_id: companyResult.id,

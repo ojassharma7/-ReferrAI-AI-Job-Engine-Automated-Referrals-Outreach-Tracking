@@ -3,14 +3,8 @@
 // far better than a generic aggregator for "jobs at <company>".
 
 import type { JobSearchResult } from '@/lib/job-search-client';
-
-function slugVariants(company: string): string[] {
-  const base = company.toLowerCase().trim();
-  const noSpace = base.replace(/[^a-z0-9]/g, '');
-  const dashed = base.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-  const firstWord = base.split(/\s+/)[0].replace(/[^a-z0-9]/g, '');
-  return [...new Set([noSpace, dashed, firstWord])].filter(Boolean);
-}
+import { titleMatchesRole } from '@/lib/roles';
+import { boardSlugs } from '@/lib/company/resolve';
 
 function stripHtml(s: string): string {
   return (s || '')
@@ -25,25 +19,14 @@ function stripHtml(s: string): string {
     .trim();
 }
 
-// A posting matches the role if the title contains the role phrase or its
-// significant tokens (prefix match so "Data Science" matches "data scientist").
-function matchesRole(title: string, role: string): boolean {
-  const t = (title || '').toLowerCase();
-  const r = (role || '').toLowerCase().trim();
-  if (!r) return true;
-  if (t.includes(r)) return true;
-  const tokens = r.split(/\s+/).filter((x) => x.length > 2);
-  if (!tokens.length) return true;
-  return tokens.every((tok) => t.includes(tok.slice(0, 5)));
-}
-
 const TIMEOUT = 15_000;
 
 export async function fetchGreenhouseJobs(
   company: string,
   role: string,
+  domain?: string,
 ): Promise<JobSearchResult[]> {
-  for (const slug of slugVariants(company)) {
+  for (const slug of boardSlugs(company, domain)) {
     try {
       const res = await fetch(
         `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs?content=true`,
@@ -54,8 +37,9 @@ export async function fetchGreenhouseJobs(
       const jobs: any[] = data.jobs ?? [];
       if (!jobs.length) continue;
 
-      const matched = jobs
-        .filter((j) => matchesRole(j.title || '', role))
+      // Right board found — return its role matches (even if 0; don't try others).
+      return jobs
+        .filter((j) => titleMatchesRole(j.title || '', role))
         .map((j) => ({
           job_id: `gh-${j.id}`,
           employer_name: company,
@@ -66,8 +50,6 @@ export async function fetchGreenhouseJobs(
           job_posted_at_datetime_utc: j.updated_at,
           job_employment_type: undefined,
         }));
-      // Right board found; return its role matches (even if 0 — don't try other slugs).
-      return matched;
     } catch {
       // network/timeout — try next variant
     }
@@ -78,8 +60,9 @@ export async function fetchGreenhouseJobs(
 export async function fetchLeverJobs(
   company: string,
   role: string,
+  domain?: string,
 ): Promise<JobSearchResult[]> {
-  for (const slug of slugVariants(company)) {
+  for (const slug of boardSlugs(company, domain)) {
     try {
       const res = await fetch(`https://api.lever.co/v0/postings/${slug}?mode=json`, {
         signal: AbortSignal.timeout(TIMEOUT),
@@ -89,7 +72,7 @@ export async function fetchLeverJobs(
       if (!Array.isArray(data) || !data.length) continue;
 
       return data
-        .filter((j) => matchesRole(j.text || '', role))
+        .filter((j) => titleMatchesRole(j.text || '', role))
         .map((j) => ({
           job_id: `lever-${j.id}`,
           employer_name: company,
@@ -113,8 +96,9 @@ export async function fetchLeverJobs(
 export async function fetchCompanyBoardJobs(
   company: string,
   role: string,
+  domain?: string,
 ): Promise<JobSearchResult[]> {
-  const gh = await fetchGreenhouseJobs(company, role);
+  const gh = await fetchGreenhouseJobs(company, role, domain);
   if (gh.length) return gh;
-  return fetchLeverJobs(company, role);
+  return fetchLeverJobs(company, role, domain);
 }

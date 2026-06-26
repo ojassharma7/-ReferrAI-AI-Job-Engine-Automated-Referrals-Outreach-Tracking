@@ -35,11 +35,12 @@ export async function searchJobs(
   company: string,
   role: string,
   location?: string,
+  domain?: string,
 ): Promise<JobSearchResult[]> {
   // 1. The company's own ATS board (Greenhouse/Lever): real, complete openings
   //    with valid apply links. Best source for "jobs at <company>".
   try {
-    const board = await fetchCompanyBoardJobs(company, role);
+    const board = await fetchCompanyBoardJobs(company, role, domain);
     if (board.length > 0) return board.slice(0, 30);
   } catch (e) {
     console.warn('Board fetch failed:', e instanceof Error ? e.message : e);
@@ -123,14 +124,11 @@ export async function searchJobsAdzuna(
       job_posted_at_datetime_utc: r.created,
     }));
 
-    // Soft-prioritize jobs actually at the searched company (don't exclude others).
+    // Only keep jobs actually AT the searched company (Adzuna also matches the
+    // company name appearing in unrelated descriptions). Empty -> UI shows the
+    // "see all on LinkedIn" link rather than off-company noise.
     const c = company.toLowerCase();
-    jobs.sort((a, b) => {
-      const am = a.employer_name.toLowerCase().includes(c) ? 0 : 1;
-      const bm = b.employer_name.toLowerCase().includes(c) ? 0 : 1;
-      return am - bm;
-    });
-    return jobs;
+    return jobs.filter((j) => j.employer_name.toLowerCase().includes(c));
   } catch (err) {
     console.error('Adzuna search failed:', err instanceof Error ? err.message : err);
     return [];
