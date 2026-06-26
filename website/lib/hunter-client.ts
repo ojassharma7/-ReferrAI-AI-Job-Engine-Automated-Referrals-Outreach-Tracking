@@ -7,6 +7,8 @@
 //    "Data Scientist" search returns engineers/data scientists, not the COO.
 // Results are then sorted by how well each title matches the searched role.
 
+import { roleScore } from '@/lib/roles';
+
 const HUNTER_API_KEY = process.env.HUNTER_API_KEY;
 const HUNTER_BASE_URL = 'https://api.hunter.io/v2';
 
@@ -84,9 +86,10 @@ async function fetchContacts(opts: FetchOpts): Promise<HunterContact[]> {
     api_key: HUNTER_API_KEY,
     limit: String(opts.limit ?? 10),
   });
-  // Prefer the company NAME (Hunter resolves the domain); fall back to a domain.
-  if (opts.company) params.set('company', opts.company);
-  else if (opts.domain) params.set('domain', opts.domain);
+  // Prefer the resolved domain (authoritative); fall back to the company name
+  // (Hunter resolves the domain from a name too, but less reliably).
+  if (opts.domain) params.set('domain', opts.domain);
+  else if (opts.company) params.set('company', opts.company);
   if (opts.department) params.set('department', opts.department);
 
   const res = await fetch(`${HUNTER_BASE_URL}/domain-search?${params.toString()}`);
@@ -100,18 +103,6 @@ async function fetchContacts(opts: FetchOpts): Promise<HunterContact[]> {
   // Free tier returns partial data alongside a 400 pagination warning — still usable.
   const emails: any[] = json?.data?.emails ?? [];
   return emails.map(mapEmail);
-}
-
-// How well a title matches the searched role (higher = more relevant).
-function relevance(title: string, role: string): number {
-  const t = (title || '').toLowerCase().trim();
-  const r = role.toLowerCase().trim();
-  if (!t) return 0;
-  if (t.includes(r)) return 100; // exact role phrase
-  const tokens = r.split(/\s+/).filter((x) => x.length > 2);
-  const hits = tokens.filter((tok) => t.includes(tok)).length;
-  if (hits) return 40 + hits * 15;
-  return 10;
 }
 
 const NOISE = ['administrative assistant', 'executive assistant', 'assistant to', 'intern'];
@@ -140,9 +131,16 @@ export async function searchDomainEmployees(
     contacts = await fetchContacts({ company, domain, limit: 10 });
   }
 
-  contacts = dropNoise(contacts);
-  contacts.sort((a, b) => relevance(b.title, role) - relevance(a.title, role));
-  return contacts.slice(0, 12);
+  const scored = dropNoise(contacts)
+    .map((c) => ({ c, score: roleScore(c.title, role) }))
+    .sort((a, b) => b.score - a.score);
+
+  // Precision: when genuine role matches exist (incl. related roles like ML /
+  // Applied Scientist), show ONLY those — not the DevOps/Systems folks.
+  // Otherwise fall back to the whole department so the user still gets people.
+  const relevant = scored.filter((x) => x.score >= 50);
+  const chosen = relevant.length ? relevant : scored;
+  return chosen.map((x) => x.c).slice(0, 12);
 }
 
 /**

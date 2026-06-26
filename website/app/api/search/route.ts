@@ -9,6 +9,8 @@ import { getAppUser } from '@/lib/auth';
 import { persistSearchResult } from '@/lib/db/persist';
 import { enforceLimit, recordUsage } from '@/lib/usage';
 import { contactsAreMock, jobsAreMock, mockRecruiters, mockDomainEmployees } from '@/lib/mock';
+import { resolveCompany } from '@/lib/company/resolve';
+import { roleScore } from '@/lib/roles';
 
 export async function POST(request: NextRequest) {
   console.log('🚀 /api/search endpoint called');
@@ -38,32 +40,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Try Apollo.io lookup
+    // 0. Resolve the (possibly misspelled / informal) name to a canonical company
+    //    name + domain. The domain makes Hunter reliable and builds the ATS slug.
+    const resolved = await resolveCompany(company);
+    const companyName = resolved?.name || company;
+    const clearbitDomain = resolved?.domain;
+
+    // 1. Company display data (best-effort; mock when Apollo isn't live).
     let companyData: any = null;
     try {
-      companyData = await lookupCompany(company);
-    } catch (error: any) {
-      console.warn('Apollo.io company lookup failed:', error.message);
-      // Create fallback company data
-      companyData = {
-        id: `company-${Date.now()}`,
-        name: company,
-        domain: extractDomain(company),
-      };
+      companyData = await lookupCompany(companyName);
+    } catch {
+      companyData = { id: `company-${Date.now()}`, name: companyName, domain: clearbitDomain };
     }
 
-    // 2. Discover contacts via Hunter. Passing the company NAME lets Hunter
-    //    resolve the real domain (e.g. "Zest AI" -> zest.ai), and the department
-    //    filter (mapped from the role) returns people in the searched role.
+    // 2. Discover contacts via Hunter, using the canonical domain when we have it
+    //    (reliable) and the role->department filter for relevance.
     let recruiters: any[] = [];
     let domainEmployees: any[] = [];
-    const domain = companyData.domain || extractDomain(company);
+    const domain = clearbitDomain || companyData.domain || extractDomain(companyName);
 
     if (process.env.HUNTER_API_KEY) {
       try {
+        // Pass ONLY the trustworthy Clearbit domain — when absent, Hunter
+        // resolves from the company name itself (better than a wrong guess).
         [recruiters, domainEmployees] = await Promise.all([
-          hunterSearchRecruiters(company, domain),
-          hunterSearchDomainEmployees(company, role, domain),
+          hunterSearchRecruiters(companyName, clearbitDomain),
+          hunterSearchDomainEmployees(companyName, role, clearbitDomain),
         ]);
         console.log(`Hunter: ${recruiters.length} recruiters, ${domainEmployees.length} employees`);
       } catch (e: any) {
@@ -73,8 +76,8 @@ export async function POST(request: NextRequest) {
 
     // Last-resort demo data only when no contact provider is configured.
     if (contactsAreMock()) {
-      recruiters = mockRecruiters(company);
-      domainEmployees = mockDomainEmployees(company, role);
+      recruiters = mockRecruiters(companyName);
+      domainEmployees = mockDomainEmployees(companyName, role);
     }
 
     // The real domain is whatever Hunter resolved (from the contact emails).
@@ -86,8 +89,8 @@ export async function POST(request: NextRequest) {
     // 4. Format company data
     const companyResult = {
       id: companyData.id || `company-${Date.now()}`,
-      name: companyData.name || company,
-      domain: resolvedDomain || companyData.primary_domain || companyData.domain || extractDomain(company),
+      name: companyName,
+      domain: resolvedDomain || clearbitDomain || companyData.primary_domain || companyData.domain || extractDomain(companyName),
       industry: companyData.industry,
       size: companyData.estimated_num_employees || companyData.size,
       location: companyData.primary_location?.city || companyData.location,
@@ -132,7 +135,7 @@ export async function POST(request: NextRequest) {
         phone: contact.phone_number || contact.phone || contact.phone_numbers?.[0] || '',
         email_verified: isVerified,
         email_status: emailStatus as 'verified' | 'likely' | 'guessed' | 'invalid' | 'unknown',
-        relevance_score: calculateRelevanceScore(title, role),
+        relevance_score: roleScore(title, role),
         source: contact.source || source,
       };
     };
@@ -148,7 +151,7 @@ export async function POST(request: NextRequest) {
     // 6. Search for jobs
     let jobs: Job[] = [];
     try {
-      const jobResults = await searchJobs(company, role, companyResult.location || undefined);
+      const jobResults = await searchJobs(companyName, role, companyResult.location || undefined, domain);
       jobs = jobResults.map((job) => ({
         id: job.job_id || `job-${Date.now()}-${Math.random()}`,
         company_id: companyResult.id,
@@ -216,28 +219,26 @@ function inferSeniority(title: string): 'IC' | 'Lead' | 'Manager' | 'Director' |
 }
 
 function calculateRelevanceScore(title: string, role: string): number {
-  if (!title) return 50;
-  
-  const titleLower = title.toLowerCase();
-  const roleLower = role.toLowerCase();
-  
-  // Exact match = 100
-  if (titleLower.includes(roleLower)) return 100;
-  
-  // Related roles = 70-90
-  const relatedRoles: Record<string, string[]> = {
-    'data scientist': ['ml engineer', 'machine learning', 'data science'],
-    'software engineer': ['developer', 'programmer', 'engineer'],
+  const t = (title || '').toLowerCase().trim();
+  const r = (role || '').toLowerCase().trim();
+  if (!t) return 0;
+  if (t.includes(r)) return 100; // exact role phrase in the title
+
+  // Prefix token match so "Data Science" scores high for a "Data Scientist" search.
+  const tokens = r.split(/\s+/).filter((x) => x.length > 2);
+  const hits = tokens.filter((tok) => t.includes(tok.slice(0, 5))).length;
+  if (tokens.length && hits === tokens.length) return 90;
+  if (hits) return 62 + (hits - 1) * 12;
+
+  // Adjacent role families.
+  const related: Record<string, string[]> = {
+    'data scientist': ['machine learning', 'ml ', 'applied scien', 'research scien', 'analytics'],
+    'software engineer': ['developer', 'programmer', 'swe', 'full stack', 'backend', 'frontend'],
+    'product manager': ['product owner', 'product lead'],
   };
-  
-  const related = relatedRoles[roleLower];
-  if (related) {
-    const match = related.find(r => titleLower.includes(r));
-    if (match) return 80;
-  }
-  
-  // Default
-  return 50;
+  const fam = related[r];
+  if (fam && fam.some((k) => t.includes(k))) return 78;
+  return 45;
 }
 
 function extractDomain(companyName: string): string | null {

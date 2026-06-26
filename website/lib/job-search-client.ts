@@ -2,6 +2,7 @@
 // Provider priority: Adzuna (free, reliable) -> JSearch (RapidAPI) -> demo data.
 
 import { adzunaLive, jsearchLive, mockJobs } from '@/lib/mock';
+import { fetchCompanyBoardJobs } from '@/lib/jobs/boards';
 
 const JSEARCH_API_KEY = process.env.JSEARCH_API_KEY;
 const JSEARCH_BASE_URL = 'https://jsearch.p.rapidapi.com';
@@ -34,19 +35,31 @@ export async function searchJobs(
   company: string,
   role: string,
   location?: string,
+  domain?: string,
 ): Promise<JobSearchResult[]> {
-  if (adzunaLive()) {
-    const jobs = await searchJobsAdzuna(company, role, location);
-    // If Adzuna returned nothing, fall through to demo so the UI isn't empty.
-    if (jobs.length > 0) return jobs;
+  // 1. The company's own ATS board (Greenhouse/Lever): real, complete openings
+  //    with valid apply links. Best source for "jobs at <company>".
+  try {
+    const board = await fetchCompanyBoardJobs(company, role, domain);
+    if (board.length > 0) return board.slice(0, 30);
+  } catch (e) {
+    console.warn('Board fetch failed:', e instanceof Error ? e.message : e);
   }
 
+  // 2. Adzuna (broad role match) as a supplement.
+  if (adzunaLive()) {
+    const jobs = await searchJobsAdzuna(company, role, location);
+    if (jobs.length > 0) return jobs;
+  }
   if (jsearchLive()) {
     const jobs = await searchJobsJSearch(company, role, location);
     if (jobs.length > 0) return jobs;
   }
 
-  console.warn('No live job provider returned results — returning demo jobs.');
+  // 3. Demo jobs ONLY when no real provider is configured. For live users we
+  //    return empty (the UI shows a "see all on LinkedIn" link) rather than fake
+  //    listings with dead apply links.
+  if (adzunaLive() || jsearchLive()) return [];
   return mockJobs(company, role);
 }
 
@@ -111,14 +124,11 @@ export async function searchJobsAdzuna(
       job_posted_at_datetime_utc: r.created,
     }));
 
-    // Soft-prioritize jobs actually at the searched company (don't exclude others).
+    // Only keep jobs actually AT the searched company (Adzuna also matches the
+    // company name appearing in unrelated descriptions). Empty -> UI shows the
+    // "see all on LinkedIn" link rather than off-company noise.
     const c = company.toLowerCase();
-    jobs.sort((a, b) => {
-      const am = a.employer_name.toLowerCase().includes(c) ? 0 : 1;
-      const bm = b.employer_name.toLowerCase().includes(c) ? 0 : 1;
-      return am - bm;
-    });
-    return jobs;
+    return jobs.filter((j) => j.employer_name.toLowerCase().includes(c));
   } catch (err) {
     console.error('Adzuna search failed:', err instanceof Error ? err.message : err);
     return [];
