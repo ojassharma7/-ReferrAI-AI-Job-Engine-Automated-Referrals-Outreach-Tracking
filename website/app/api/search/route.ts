@@ -62,9 +62,11 @@ export async function POST(request: NextRequest) {
 
     if (process.env.HUNTER_API_KEY) {
       try {
+        // Pass ONLY the trustworthy Clearbit domain — when absent, Hunter
+        // resolves from the company name itself (better than a wrong guess).
         [recruiters, domainEmployees] = await Promise.all([
-          hunterSearchRecruiters(companyName, domain),
-          hunterSearchDomainEmployees(companyName, role, domain),
+          hunterSearchRecruiters(companyName, clearbitDomain),
+          hunterSearchDomainEmployees(companyName, role, clearbitDomain),
         ]);
         console.log(`Hunter: ${recruiters.length} recruiters, ${domainEmployees.length} employees`);
       } catch (e: any) {

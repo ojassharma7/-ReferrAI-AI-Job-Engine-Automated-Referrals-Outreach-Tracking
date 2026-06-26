@@ -92,6 +92,48 @@ export async function fetchLeverJobs(
   return [];
 }
 
+// Ashby (Notion, Ramp, Perplexity, many AI startups). Needs a browser UA or it
+// 403s. The list endpoint has no description, so we link to the full posting.
+const BROWSER_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36';
+
+export async function fetchAshbyJobs(
+  company: string,
+  role: string,
+  domain?: string,
+): Promise<JobSearchResult[]> {
+  for (const slug of boardSlugs(company, domain)) {
+    try {
+      const res = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${slug}`, {
+        headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' },
+        signal: AbortSignal.timeout(TIMEOUT),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const jobs: any[] = data.jobs ?? [];
+      if (!jobs.length) continue;
+
+      return jobs
+        .filter((j) => (j.isListed ?? true) && titleMatchesRole(j.title || '', role))
+        .map((j) => ({
+          job_id: `ashby-${j.id}`,
+          employer_name: company,
+          job_title: j.title,
+          job_description: `${j.title}${j.team ? ` · ${j.team}` : ''} at ${company}${
+            j.location ? ` (${j.location})` : ''
+          }. View the full description via the apply link.`,
+          job_apply_link: j.jobUrl || `https://jobs.ashbyhq.com/${slug}/${j.id}`,
+          job_city: j.location,
+          job_employment_type: j.employmentType,
+          job_posted_at_datetime_utc: j.publishedAt,
+        }));
+    } catch {
+      // try next variant
+    }
+  }
+  return [];
+}
+
 // The company's real openings from whichever ATS they use.
 export async function fetchCompanyBoardJobs(
   company: string,
@@ -100,5 +142,7 @@ export async function fetchCompanyBoardJobs(
 ): Promise<JobSearchResult[]> {
   const gh = await fetchGreenhouseJobs(company, role, domain);
   if (gh.length) return gh;
-  return fetchLeverJobs(company, role, domain);
+  const lever = await fetchLeverJobs(company, role, domain);
+  if (lever.length) return lever;
+  return fetchAshbyJobs(company, role, domain);
 }
