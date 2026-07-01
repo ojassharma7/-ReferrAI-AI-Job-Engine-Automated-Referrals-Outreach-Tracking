@@ -40,3 +40,4 @@ yarn-error.log*
 coverage/
 .nyc_output/
 
+YC_STRATEGY.md
