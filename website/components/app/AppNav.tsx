@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Search, KanbanSquare, Send, FileText, CreditCard, Settings } from 'lucide-react';
+import { Search, KanbanSquare, Send, ShieldCheck, FileText, CreditCard, Settings } from 'lucide-react';
 
 const links = [
   { href: '/dashboard', label: 'Search', icon: Search },
+  { href: '/verify', label: 'Verify', icon: ShieldCheck },
   { href: '/pipeline', label: 'Pipeline', icon: KanbanSquare },
   { href: '/outreach', label: 'Outreach', icon: Send },
   { href: '/documents', label: 'Documents', icon: FileText },
