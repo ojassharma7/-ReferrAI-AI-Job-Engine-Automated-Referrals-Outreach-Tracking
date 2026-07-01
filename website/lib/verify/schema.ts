@@ -45,4 +45,7 @@ export interface CandidateInput {
   linkedinUrl?: string;
   highlights?: string; // freeform: achievements, impact, experience
   resumeText?: string;
+  // The optional ≤60-second "one question" answer — a live, hard-to-fake signal
+  // that boosts confidence without a 20-minute test.
+  liveAnswer?: string;
 }

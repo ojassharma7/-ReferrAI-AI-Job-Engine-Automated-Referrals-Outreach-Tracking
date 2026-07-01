@@ -17,11 +17,14 @@ import {
 } from 'lucide-react';
 import type { VerifiedAssessment, SafeToReferBrief } from '@/lib/verify/schema';
 import type { GitHubEvidence } from '@/lib/verify/github';
+import type { SiteEvidence } from '@/lib/verify/web';
 
 interface VerifyResponse {
   assessment: VerifiedAssessment;
   brief: SafeToReferBrief | null;
   github: GitHubEvidence;
+  site: SiteEvidence;
+  oneQuestion: string;
   isMock: boolean;
 }
 
@@ -38,6 +41,7 @@ export function VerifyClient() {
     portfolioUrl: '',
     highlights: '',
     jdText: '',
+    liveAnswer: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -217,8 +221,30 @@ export function VerifyClient() {
               </Card>
             )}
 
+            {/* 60-second boost — the optional live signal (no 20-min test) */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Sparkles className="h-4 w-4" /> Boost your score — optional, ~60 seconds
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <p className="text-muted-foreground">{data.oneQuestion}</p>
+                <Textarea
+                  rows={3}
+                  value={form.liveAnswer}
+                  onChange={set('liveAnswer')}
+                  placeholder="A sentence or two — no test, just proof you can speak to your own work."
+                />
+                <Button size="sm" variant="outline" onClick={run} disabled={loading || !form.liveAnswer.trim()}>
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                  Re-verify with my answer
+                </Button>
+              </CardContent>
+            </Card>
+
             {data.isMock && (
-              <p className="text-center text-xs text-muted-foreground">Demo assessment (add GEMINI_API_KEY for the full AI read). GitHub evidence is live.</p>
+              <p className="text-center text-xs text-muted-foreground">Demo assessment (add GEMINI_API_KEY for the full AI read). GitHub + portfolio evidence is live.</p>
             )}
           </>
         )}
