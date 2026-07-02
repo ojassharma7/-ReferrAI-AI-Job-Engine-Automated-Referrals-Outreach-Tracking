@@ -81,10 +81,12 @@ Résumé: ${input.resumeText ? input.resumeText.slice(0, 2500) : '(none)'}
 ${input.liveAnswer ? `\nCandidate's 60-second answer (live signal): ${input.liveAnswer.slice(0, 1500)}` : ''}
 ${jdText ? `\nJob description to evaluate against:\n${jdText.slice(0, 2500)}` : ''}
 
-Return JSON exactly:
-{"assessment":{"competenceScore":0-100,"summary":"","strengths":[],"gaps":[],"verifiedSignals":[],"evidence":[{"source":"github|portfolio|resume|highlight|linkedin","detail":""}]},
+Return STRICT JSON with exactly this shape (no comments, no trailing text):
+{"assessment":{"competenceScore":87,"summary":"","strengths":[],"gaps":[],"verifiedSignals":[],"evidence":[{"source":"github","detail":""}]},
 "oneQuestion":"one specific ≤60s question tied to their evidence",
-"brief": ${jdText ? '{"matchScore":0-100,"verdict":"strong|moderate|weak","headline":"","reasons":[],"watchouts":[],"proofPoints":[]}' : 'null'}}`;
+"brief":${jdText ? '{"matchScore":87,"verdict":"strong","headline":"","reasons":[],"watchouts":[],"proofPoints":[]}' : 'null'}}
+
+Constraints: competenceScore${jdText ? ' and matchScore are' : ' is an'} integer${jdText ? 's' : ''} 0-100. evidence[].source is one of: github, portfolio, resume, highlight, linkedin.${jdText ? ' brief.verdict is one of: strong, moderate, weak.' : ' Set brief to null.'}`;
 
   try {
     const raw = await callGemini(SYSTEM, prompt);
