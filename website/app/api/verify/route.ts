@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       linkedinUrl: body.linkedinUrl,
       highlights: body.highlights,
       resumeText: body.resumeText,
+      liveAnswer: body.liveAnswer,
     },
     body.jdText,
   );
